@@ -441,7 +441,7 @@ class User(AbstractUser):
 
 
 @python_2_unicode_compatible
-class AnonymousUser(object):
+class DefaultAnonymousUser(object):
     id = None
     pk = None
     username = ''
@@ -509,3 +509,6 @@ class AnonymousUser(object):
 
     def is_authenticated(self):
         return False
+
+
+AnonymousUser = auth.get_anonymous_user_class()

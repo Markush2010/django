@@ -126,8 +126,27 @@ def logout(request):
         request.session[LANGUAGE_SESSION_KEY] = language
 
     if hasattr(request, 'user'):
-        from django.contrib.auth.models import AnonymousUser
-        request.user = AnonymousUser()
+        request.user = get_anonymous_user()
+
+
+def get_anonymous_user_class():
+    """
+    Returns the class defined in `settings.ANONYMOUS_USER_CLASS` specifying the
+    anonymous user implementation. The settings variable can either point to a
+    class (which will be directly returned) or to a callable, which will be
+    called and whos return value will be returned.
+    """
+    imp = import_string(settings.ANONYMOUS_USER_CLASS)
+    if callable(imp) and not type(imp) is type:
+        return imp()
+    return imp
+
+
+def get_anonymous_user():
+    """
+    Returns an instance of the anonymous user implementation.
+    """
+    return get_anonymous_user_class()()
 
 
 def get_user_model():
@@ -149,7 +168,6 @@ def get_user(request):
     Returns the user model instance associated with the given request session.
     If no user is retrieved an instance of `AnonymousUser` is returned.
     """
-    from .models import AnonymousUser
     user = None
     try:
         user_id = request.session[SESSION_KEY]
@@ -160,7 +178,7 @@ def get_user(request):
         if backend_path in settings.AUTHENTICATION_BACKENDS:
             backend = load_backend(backend_path)
             user = backend.get_user(user_id)
-    return user or AnonymousUser()
+    return user or get_anonymous_user()
 
 
 def get_permission_codename(action, opts):

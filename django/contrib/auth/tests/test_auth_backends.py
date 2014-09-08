@@ -2,8 +2,9 @@ from __future__ import unicode_literals
 from datetime import date
 
 from django.conf import settings
+from django.contrib.auth import get_anonymous_user
 from django.contrib.auth.backends import ModelBackend
-from django.contrib.auth.models import User, Group, Permission, AnonymousUser
+from django.contrib.auth.models import User, Group, Permission
 from django.contrib.auth.tests.utils import skipIfCustomUser
 from django.contrib.auth.tests.custom_user import ExtensionUser, CustomPermissionsUser, CustomUser
 from django.contrib.contenttypes.models import ContentType
@@ -96,7 +97,7 @@ class BaseModelBackendTest(object):
         self.assertEqual(user.get_group_permissions(), set(['auth.test_group']))
         self.assertEqual(user.has_perms(['auth.test3', 'auth.test_group']), True)
 
-        user = AnonymousUser()
+        user = get_anonymous_user()
         self.assertEqual(user.has_perm('test'), False)
         self.assertEqual(user.has_perms(['auth.test2', 'auth.test3']), False)
 
@@ -387,7 +388,7 @@ class AnonymousUserBackendTest(TestCase):
     def setUp(self):
         self.curr_auth = settings.AUTHENTICATION_BACKENDS
         settings.AUTHENTICATION_BACKENDS = (self.backend,)
-        self.user1 = AnonymousUser()
+        self.user1 = get_anonymous_user()
 
     def tearDown(self):
         settings.AUTHENTICATION_BACKENDS = self.curr_auth

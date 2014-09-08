@@ -1,8 +1,8 @@
 from __future__ import unicode_literals
 
 from django.apps import apps
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import User, AnonymousUser
+from django.contrib.auth import get_anonymous_user, get_user_model
+from django.contrib.auth.models import User, DefaultAnonymousUser
 from django.contrib.auth.tests.custom_user import CustomUser
 from django.contrib.auth.tests.utils import skipIfCustomUser
 from django.core.exceptions import ImproperlyConfigured
@@ -20,6 +20,23 @@ def user_model_swapped(**kwargs):
         setattr(User, 'objects', User._default_manager)
         ensure_default_manager(User)
         apps.clear_cache()
+
+
+class CustomAnonUser(DefaultAnonymousUser):
+    def __str__(self):
+        return 'CustomAnonUser'
+
+
+class CallableAnonUser(DefaultAnonymousUser):
+    def __str__(self):
+        return 'CallableAnonUser'
+
+
+def get_anon_user():
+    class InnerAnonUser(DefaultAnonymousUser):
+        def __str__(self):
+            return 'InnerAnonUser'
+    return InnerAnonUser
 
 
 @skipIfCustomUser
@@ -64,7 +81,7 @@ class BasicTestCase(TestCase):
 
     def test_anonymous_user(self):
         "Check the properties of the anonymous user"
-        a = AnonymousUser()
+        a = get_anonymous_user()
         self.assertEqual(a.pk, None)
         self.assertFalse(a.is_authenticated())
         self.assertFalse(a.is_staff)
@@ -72,6 +89,25 @@ class BasicTestCase(TestCase):
         self.assertFalse(a.is_superuser)
         self.assertEqual(a.groups.all().count(), 0)
         self.assertEqual(a.user_permissions.all().count(), 0)
+        self.assertEqual(str(a), 'AnonymousUser')
+
+    @override_settings(ANONYMOUS_USER_CLASS='django.contrib.auth.tests.test_basic.CustomAnonUser')
+    def test_custom_anonymous_user(self):
+        "Check the properties of the anonymous user"
+        a = get_anonymous_user()
+        self.assertEqual(str(a), 'CustomAnonUser')
+
+    @override_settings(ANONYMOUS_USER_CLASS='django.contrib.auth.tests.test_basic.CallableAnonUser')
+    def test_custom_anonymous_user(self):
+        "Check the properties of the anonymous user"
+        a = get_anonymous_user()
+        self.assertEqual(str(a), 'CallableAnonUser')
+
+    @override_settings(ANONYMOUS_USER_CLASS='django.contrib.auth.tests.test_basic.get_anon_user')
+    def test_custom_anonymous_user(self):
+        "Check the properties of the anonymous user"
+        a = get_anonymous_user()
+        self.assertEqual(str(a), 'InnerAnonUser')
 
     def test_superuser(self):
         "Check the creation and properties of a superuser"

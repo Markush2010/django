@@ -505,6 +505,8 @@ CACHE_MIDDLEWARE_ALIAS = 'default'
 
 AUTH_USER_MODEL = 'auth.User'
 
+ANONYMOUS_USER_CLASS = 'django.contrib.auth.models.DefaultAnonymousUser'
+
 AUTHENTICATION_BACKENDS = ('django.contrib.auth.backends.ModelBackend',)
 
 LOGIN_URL = '/accounts/login/'

@@ -1,5 +1,6 @@
 import os
-from django.contrib.auth.models import AnonymousUser, User
+from django.contrib.auth import get_anonymous_user
+from django.contrib.auth.models import User
 from django.contrib.auth.tests.utils import skipIfCustomUser
 from django.template import Template, Context, TemplateSyntaxError
 from django.test import TestCase, override_settings
@@ -43,7 +44,7 @@ class FlatpageTemplateTagTests(TestCase):
             "{{ page.title }},"
             "{% endfor %}"
         ).render(Context({
-            'anonuser': AnonymousUser()
+            'anonuser': get_anonymous_user()
         }))
         self.assertEqual(out, "A Flatpage,A Nested Flatpage,")
 
@@ -82,7 +83,7 @@ class FlatpageTemplateTagTests(TestCase):
             "{{ page.title }},"
             "{% endfor %}"
         ).render(Context({
-            'anonuser': AnonymousUser()
+            'anonuser': get_anonymous_user()
         }))
         self.assertEqual(out, "A Nested Flatpage,")
 
