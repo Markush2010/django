@@ -508,8 +508,8 @@ class AlterOrderWithRespectTo(Operation):
 class AlterModelOptions(Operation):
     """
     Sets new model options that don't directly affect the database schema
-    (like verbose_name, permissions, ordering). Python code in migrations
-    may still need them.
+    (like verbose_name, permissions, ordering) and base classes. Python code in
+    migrations may still need them.
     """
 
     # Model options we want to compare and preserve in an AlterModelOptions op
@@ -524,9 +524,10 @@ class AlterModelOptions(Operation):
         "verbose_name_plural",
     ]
 
-    def __init__(self, name, options):
+    def __init__(self, name, options=None, bases=None):
         self.name = name
-        self.options = options
+        self.options = options or {}
+        self.bases = bases or (models.Model,)
 
     @cached_property
     def name_lower(self):
@@ -545,12 +546,16 @@ class AlterModelOptions(Operation):
 
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
-        model_state.options = dict(model_state.options)
-        model_state.options.update(self.options)
-        for key in self.ALTER_OPTION_KEYS:
-            if key not in self.options and key in model_state.options:
-                del model_state.options[key]
-        state.reload_model(app_label, self.name_lower)
+        if self.options:
+            model_state.options = dict(model_state.options)
+            model_state.options.update(self.options)
+            for key in self.ALTER_OPTION_KEYS:
+                if key not in self.options and key in model_state.options:
+                    del model_state.options[key]
+        if self.bases:
+            model_state.bases = self.bases
+        if self.options or self.bases:
+            state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         pass

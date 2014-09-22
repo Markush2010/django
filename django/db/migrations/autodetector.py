@@ -1009,12 +1009,23 @@ class MigrationAutodetector(object):
                 option for option in new_model_state.options.items()
                 if option[0] in AlterModelOptions.ALTER_OPTION_KEYS
             )
+
+            old_bases = old_model_state.bases
+            new_bases = new_model_state.bases
+
+            op_kwargs = {}
             if old_options != new_options:
+                op_kwargs['options'] = new_options
+
+            if old_bases != new_bases:
+                op_kwargs['bases'] = new_bases
+
+            if op_kwargs:
                 self.add_operation(
                     app_label,
                     operations.AlterModelOptions(
                         name=model_name,
-                        options=new_options,
+                        **op_kwargs
                     )
                 )
 
