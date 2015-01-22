@@ -4,7 +4,7 @@ XML serializer.
 
 from __future__ import unicode_literals
 
-from django.apps import apps
+from django.apps import apps as global_apps
 from django.conf import settings
 from django.core.serializers import base
 from django.db import models, DEFAULT_DB_ALIAS
@@ -277,6 +277,7 @@ class Deserializer(base.Deserializer):
                 "<%s> node is missing the required '%s' attribute"
                 % (node.nodeName, attr))
         try:
+            apps = self.options.get('apps', global_apps)
             return apps.get_model(model_identifier)
         except (LookupError, TypeError):
             raise base.DeserializationError(
