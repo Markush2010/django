@@ -35,6 +35,12 @@ def get_related_models_recursive(model):
     """
     Returns all models that have a direct or indirect relationship
     to the given model.
+
+    Relationships are either defined by explicit relational fields, like
+    ForeignKey, ManyToManyField or OneToOneField, or by inheriting from another
+    model where subclass are included but superclasses not. Note, however, that
+    a model inheriting from a concrete model also is related to its superclass
+    through the implicit *_ptr OneToOneField on the subclass.
     """
     def _related_models(m):
         return [
