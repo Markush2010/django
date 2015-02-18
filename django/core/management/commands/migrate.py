@@ -231,6 +231,14 @@ class Command(BaseCommand):
             elif action == "render_success":
                 elapsed = " (%.3fs)" % (time.time() - self.start) if compute_time else ""
                 self.stdout.write(self.style.MIGRATE_SUCCESS(" DONE" + elapsed))
+            elif action == "create_plan_start":
+                if compute_time:
+                    self.start = time.time()
+                self.stdout.write("  Creating migration plan...", ending="")
+                self.stdout.flush()
+            elif action == "create_plan_success":
+                elapsed = " (%.3fs)" % (time.time() - self.start) if compute_time else ""
+                self.stdout.write(self.style.MIGRATE_SUCCESS(" DONE" + elapsed))
 
     def sync_apps(self, connection, app_labels):
         "Runs the old syncdb-style operation on a list of app_labels."

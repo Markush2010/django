@@ -361,12 +361,16 @@ class ExecutorTests(MigrationTestBase):
 
         migrations = executor.loader.graph.nodes
         expected = [
+            ("create_plan_start", ),
+            ("create_plan_success", ),
             ("render_start", ),
             ("render_success", ),
             ("apply_start", migrations['migrations', '0001_initial'], False),
             ("apply_success", migrations['migrations', '0001_initial'], False),
             ("apply_start", migrations['migrations', '0002_second'], False),
             ("apply_success", migrations['migrations', '0002_second'], False),
+            ("create_plan_start", ),
+            ("create_plan_success", ),
             ("render_start", ),
             ("render_success", ),
             ("unapply_start", migrations['migrations', '0002_second'], False),

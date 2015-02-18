@@ -69,6 +69,8 @@ class MigrationExecutor(object):
         Django first needs to create all project states before a migration is
         (un)applied and in a second step run all the database operations.
         """
+        if self.progress_callback:
+            self.progress_callback("create_plan_start")
         if plan is None:
             plan = self.migration_plan(targets)
         migrations_to_run = {m[0] for m in plan}
@@ -76,8 +78,9 @@ class MigrationExecutor(object):
         full_plan = self.migration_plan(self.loader.graph.leaf_nodes(), clean_start=True)
         # Holds all states right before a migration is applied
         # if the migration is being run.
+        if self.progress_callback:
+            self.progress_callback("create_plan_success")
         states = {}
-        state = ProjectState(real_apps=list(self.loader.unmigrated_apps))
         if self.progress_callback:
             self.progress_callback("render_start")
         # Phase 1 -- Store all project states of migrations right before they
@@ -85,6 +88,7 @@ class MigrationExecutor(object):
         # trigger the rendering of the initial project state. From this time on
         # models will be recursively reloaded as explained in
         # django.db.migrations.state.get_related_models_recursive().
+        state = ProjectState(real_apps=list(self.loader.unmigrated_apps))
         for migration, _ in full_plan:
             if not migrations_to_run:
                 # We remove every migration whose state was already computed
