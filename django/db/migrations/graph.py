@@ -5,12 +5,11 @@ from collections import deque
 from django.db.migrations.state import ProjectState
 from django.utils.datastructures import OrderedSet
 from django.utils.encoding import python_2_unicode_compatible
+from django.utils.functional import cached_property
 
 
 @python_2_unicode_compatible
 class Node(object):
-    __slots__ = ['key', 'app_label', 'migration_name', 'migration', 'children', 'parents', 'descendants', 'ancestors']
-
     def __init__(self, key, migration):
         self.key = key
         self.app_label = key[0]
@@ -35,21 +34,19 @@ class Node(object):
     def add_child(self, child):
         self.children.add(child)
 
+    @cached_property
     def get_descendants(self):
-        if not hasattr(self, 'descendants'):
-            descendants = deque([self])
-            for child in sorted(self.children):
-                descendants.extendleft(reversed(child.get_descendants()))
-            self.descendants = list(OrderedSet(descendants))
-        return self.descendants
+        descendants = deque([self])
+        for child in sorted(self.children):
+            descendants.extendleft(reversed(child.get_descendants()))
+        return list(OrderedSet(descendants))
 
+    @cached_property
     def get_ancestors(self):
-        if not hasattr(self, 'ancestors'):
-            ancestors = deque([self])
-            for parent in sorted(self.parents):
-                ancestors.extendleft(reversed(parent.get_ancestors()))
-            self.ancestors = list(OrderedSet(ancestors))
-        return self.ancestors
+        ancestors = deque([self])
+        for parent in sorted(self.parents):
+            ancestors.extendleft(reversed(parent.get_ancestors()))
+        return list(OrderedSet(ancestors))
 
     def __str__(self):
         return str((self.app_label, self.migration_name))
@@ -111,10 +108,8 @@ class MigrationGraph(object):
     def clear_cache(self):
         if self.cached:
             for node in self.nodes:
-                if hasattr(node, 'ancestors'):
-                    del node.ancestors
-                if hasattr(node, 'descendants'):
-                    del node.descendants
+                node.__dict__.pop('get_ancestors', None)
+                node.__dict__.pop('get_descendants', None)
             self.cached = False
 
     def forwards_plan(self, node):
