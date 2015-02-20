@@ -5,25 +5,25 @@ from collections import deque
 from django.db.migrations.state import ProjectState
 from django.utils.datastructures import OrderedSet
 from django.utils.encoding import python_2_unicode_compatible
-from django.utils.functional import cached_property
+from django.utils.functional import cached_property, total_ordering
 
 
 @python_2_unicode_compatible
+@total_ordering
 class Node(object):
-    def __init__(self, key, migration):
+    def __init__(self, key):
         self.key = key
-        self.app_label = key[0]
-        self.migration_name = key[1]
-        self.migration = migration
         self.children = set()
         self.parents = set()
 
     def __eq__(self, other):
-        return (isinstance(other, Node) and self.app_label == other.app_label and self.migration_name == other.migration_name
-                or isinstance(other, tuple) and self.app_label == other[0] and self.migration_name == other[1])
+        return self.key == other
+
+    def __lt__(self, other):
+        return self.key < other
 
     def __hash__(self):
-        return hash((self.app_label, self.migration_name))
+        return hash(self.key)
 
     def __getitem__(self, item):
         return self.key[item]
@@ -35,24 +35,24 @@ class Node(object):
         self.children.add(child)
 
     @cached_property
-    def get_descendants(self):
+    def descendants(self):
         descendants = deque([self])
         for child in sorted(self.children):
-            descendants.extendleft(reversed(child.get_descendants()))
+            descendants.extendleft(reversed(child.descendants))
         return list(OrderedSet(descendants))
 
     @cached_property
-    def get_ancestors(self):
+    def ancestors(self):
         ancestors = deque([self])
         for parent in sorted(self.parents):
-            ancestors.extendleft(reversed(parent.get_ancestors()))
+            ancestors.extendleft(reversed(parent.ancestors))
         return list(OrderedSet(ancestors))
 
     def __str__(self):
         return str((self.app_label, self.migration_name))
 
     def __repr__(self):
-        return '<Node: (%s, %s)>' % (self.app_label, self.migration_name)
+        return '<Node: (%r, %r)>' % self.key
 
 
 @python_2_unicode_compatible
@@ -85,7 +85,7 @@ class MigrationGraph(object):
         self.cached = False
 
     def add_node(self, key, implementation):
-        node = Node(key, implementation)
+        node = Node(key)
         self.node_map[key] = node
         self.nodes[node] = implementation
         self.clear_cache()
@@ -108,8 +108,8 @@ class MigrationGraph(object):
     def clear_cache(self):
         if self.cached:
             for node in self.nodes:
-                node.__dict__.pop('get_ancestors', None)
-                node.__dict__.pop('get_descendants', None)
+                node.__dict__.pop('ancestors', None)
+                node.__dict__.pop('descendants', None)
             self.cached = False
 
     def forwards_plan(self, node):
@@ -123,7 +123,7 @@ class MigrationGraph(object):
             raise NodeNotFoundError("Node %r not a valid node" % (node, ), node)
         self.ensure_not_cyclic(node, lambda x: self.node_map[x].parents)
         self.cached = True
-        return self.node_map[node].get_ancestors()
+        return self.node_map[node].ancestors
 
     def backwards_plan(self, node):
         """
@@ -136,7 +136,7 @@ class MigrationGraph(object):
             raise NodeNotFoundError("Node %r not a valid node" % (node, ), node)
         self.ensure_not_cyclic(node, lambda x: self.node_map[x].children)
         self.cached = True
-        return self.node_map[node].get_descendants()
+        return self.node_map[node].descendants
 
     def root_nodes(self, app=None):
         """
@@ -145,8 +145,8 @@ class MigrationGraph(object):
         """
         roots = set()
         for node in self.nodes:
-            if (not any(key.app_label == node.app_label for key in list(node.parents))
-                    and (not app or app == node.app_label)):
+            if (not any(key[0] == node[0] for key in list(node.parents))
+                    and (not app or app == node[0])):
                 roots.add(node)
         return sorted(roots)
 
@@ -160,8 +160,8 @@ class MigrationGraph(object):
         """
         leaves = set()
         for node in self.nodes:
-            if (not any(key.app_label == node.app_label for key in list(node.children))
-                    and (not app or app == node.app_label)):
+            if (not any(key[0] == node[0] for key in list(node.children))
+                    and (not app or app == node[0])):
                 leaves.add(node)
         return sorted(leaves)
 
