@@ -49,7 +49,7 @@ class Node(object):
         return list(OrderedSet(ancestors))
 
     def __str__(self):
-        return str((self.app_label, self.migration_name))
+        return str(self.key)
 
     def __repr__(self):
         return '<Node: (%r, %r)>' % self.key
@@ -177,7 +177,7 @@ class MigrationGraph(object):
                 for node in get_children(top):
                     if node in stack:
                         cycle = stack[stack.index(node):]
-                        raise CircularDependencyError(", ".join("%s.%s" % n for n in cycle))
+                        raise CircularDependencyError(", ".join("%s.%s" % n.key for n in cycle))
                     if node in todo:
                         stack.append(node)
                         todo.remove(node)
