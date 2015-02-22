@@ -1,5 +1,7 @@
 from __future__ import unicode_literals
 
+from collections import OrderedDict
+
 from django.apps.registry import apps as global_apps
 from django.db import migrations
 
@@ -73,13 +75,48 @@ class MigrationExecutor(object):
             self.progress_callback("create_plan_start")
         if plan is None:
             plan = self.migration_plan(targets)
-        migrations_to_run = {m[0] for m in plan}
         # Create the forwards plan Django would follow on an empty database
         full_plan = self.migration_plan(self.loader.graph.leaf_nodes(), clean_start=True)
         # Holds all states right before a migration is applied
         # if the migration is being run.
         if self.progress_callback:
             self.progress_callback("create_plan_success")
+
+        # Phase 0 -- Group successive migrations in plan. We will only store
+        # project state right before the first of those migrations
+
+        # Mapping of "migration -> position" in the full_plan
+        node_map = {m: i for i, (m, _) in enumerate(full_plan)}
+        groups = []
+        # Mapping of "migration -> (position, backwards)" in the group
+        current_group = OrderedDict()
+        current_index = 0
+        last = None
+        compute_state_for = set()
+        for migration, backwards in plan:
+            if last is None:
+                current_group[migration] = (0, backwards)
+                compute_state_for.add(migration)
+                current_index = 1
+            else:
+                if last[1] == backwards and (
+                        backwards and node_map[last[0]] - 1 == node_map[migration] or
+                        not backwards and node_map[last[0]] + 1 == node_map[migration]):
+                    # If last and current node are both forwards or backwards
+                    # AND if they are consecutive in the full_plan
+                    current_group[migration] = (current_index, backwards)
+                    if backwards:
+                        compute_state_for.add(migration)
+                    current_index += 1
+                else:
+                    groups.append(current_group)
+                    current_group = OrderedDict()
+                    current_group[migration] = (0, backwards)
+                    compute_state_for.add(migration)
+                    current_index = 1
+            last = (migration, backwards)
+        groups.append(current_group)
+
         states = {}
         if self.progress_callback:
             self.progress_callback("render_start")
@@ -90,27 +127,31 @@ class MigrationExecutor(object):
         # django.db.migrations.state.get_related_models_recursive().
         state = ProjectState(real_apps=list(self.loader.unmigrated_apps))
         for migration, _ in full_plan:
-            if not migrations_to_run:
+            if not compute_state_for:
                 # We remove every migration whose state was already computed
                 # from the set. This way migrations that are not applied won't
                 # trigger a mutate_state() call. If no states for migrations
                 # must be computed, we can exit this loop.
                 break
-            do_run = migration in migrations_to_run
+            do_run = migration in compute_state_for
             if do_run:
                 if 'apps' not in state.__dict__:
                     state.apps  # Render all real_apps -- performance critical
                 states[migration] = state.clone()
-                migrations_to_run.remove(migration)
+                compute_state_for.remove(migration)
             state = migration.mutate_state(state, in_place=not do_run)
         if self.progress_callback:
             self.progress_callback("render_success")
         # Phase 2 -- Run the migrations
-        for migration, backwards in plan:
+        for group in groups:
+            migration, (_, backwards) = next(iter(group.items()))
             if not backwards:
-                self.apply_migration(states[migration], migration, fake=fake, fake_initial=fake_initial)
+                state = states[migration]
+                for migration, (_, backwards) in group.items():
+                    state = self.apply_migration(state, migration, fake=fake, fake_initial=fake_initial)
             else:
-                self.unapply_migration(states[migration], migration, fake=fake)
+                for migration, (_, backwards) in group.items():
+                    self.unapply_migration(states[migration], migration, fake=fake)
 
     def collect_sql(self, plan):
         """
