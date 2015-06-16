@@ -1,0 +1,16 @@
+============
+Django's API
+============
+
+This section of Django's documentation describes Django's internals from a
+algorithmic level opposed to other areas of the documentation. It should not be
+seen as what a function signature looks like, rather than how certain larger
+parts work.
+
+.. warning::
+
+    This chapter of the documentation describes Django internals that are not
+    necessarily part of the public API and may change without further notice!
+
+.. toctree::
+   :maxdepth: 1
