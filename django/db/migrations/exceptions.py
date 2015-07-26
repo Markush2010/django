@@ -58,3 +58,10 @@ class NodeNotFoundError(LookupError):
 
 class MigrationSchemaMissing(DatabaseError):
     pass
+
+
+class StateError(Exception):
+    """
+    Raised when mutating the migration state during applying / unapplying
+    migrations.
+    """

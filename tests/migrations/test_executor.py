@@ -1,10 +1,13 @@
 from django.apps.registry import apps as global_apps
-from django.db import connection
+from django.db import connection, models
+from django.db.migrations import CreateModel, Migration as BaseMigration
+from django.db.migrations.exceptions import StateError
 from django.db.migrations.executor import MigrationExecutor
 from django.db.migrations.graph import MigrationGraph
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.utils import DatabaseError
 from django.test import TestCase, modify_settings, override_settings
+from django.utils import six
 
 from .test_base import MigrationTestBase
 
@@ -455,6 +458,78 @@ class ExecutorTests(MigrationTestBase):
             ("migrations", "0001_squashed_0002"),
             recorder.applied_migrations(),
         )
+
+    def test_debug_initial_mutate_state_exception(self):
+        class Migration(BaseMigration):
+            operations = [
+                CreateModel(
+                    name='Bar',
+                    fields={
+                        'id': models.AutoField(primary_key=True),
+                        'fk': models.ForeignKey('testapp.Foo', on_delete=models.CASCADE),
+                    },
+                )
+            ]
+
+        migration = Migration('0001_initial', 'testapp')
+        executor = MigrationExecutor(connection)
+        executor.loader.graph.add_node(('testapp', '0001_initial'), migration)
+        plan = [(migration, False)]
+        msg = 'Error when mutating state in migration testapp.0001_initial at operation "Create model Bar"'
+        with six.assertRaisesRegex(self, StateError, msg):
+            executor.migrate(None, plan)
+
+    def test_debug_migrate_state_exception(self):
+        class Migration(BaseMigration):
+            operations = [
+                CreateModel(
+                    name='Bar',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('fk', models.ForeignKey('testapp.Foo', on_delete=models.CASCADE)),
+                    ],
+                )
+            ]
+
+        migration = Migration('0001_initial', 'testapp')
+        executor = MigrationExecutor(connection)
+        executor.loader.graph.add_node(('testapp', '0001_initial'), migration)
+        plan = [(migration, False)]
+        msg = 'Error when applying migration testapp.0001_initial at operation "Create model Bar"'
+        with six.assertRaisesRegex(self, ValueError, msg):
+            executor.migrate(None, plan)
+
+    def test_debug_migrate_exception(self):
+        class Migration1(BaseMigration):
+            operations = [
+                CreateModel(
+                    name='Foo',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                    ],
+                )
+            ]
+
+        class Migration2(BaseMigration):
+            dependecies = []
+            operations = [
+                CreateModel(
+                    name='Bar',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('fk', models.ForeignKey('testapp.Foo', on_delete=models.CASCADE)),
+                    ],
+                )
+            ]
+
+        migration1 = Migration1('0001_initial', 'testapp')
+        migration2 = Migration2('0002_second', 'testapp')
+        executor = MigrationExecutor(connection)
+        executor.loader.graph.add_node(('testapp', '0001_initial'), migration1)
+        executor.loader.graph.add_node(('testapp', '0002_second'), migration2)
+        executor.loader.applied_migrations = {('testapp', '0001_initial')}
+        plan = [(migration2, False)]
+        executor.migrate(None, plan)
 
 
 class FakeLoader(object):

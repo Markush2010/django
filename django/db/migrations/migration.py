@@ -1,9 +1,12 @@
 from __future__ import unicode_literals
 
+import sys
+
 from django.db.transaction import atomic
+from django.utils import six
 from django.utils.encoding import python_2_unicode_compatible
 
-from .exceptions import IrreversibleError
+from .exceptions import IrreversibleError, StateError
 
 
 @python_2_unicode_compatible
@@ -74,6 +77,18 @@ class Migration(object):
     def __hash__(self):
         return hash("%s.%s" % (self.app_label, self.name))
 
+    def _mutate_operation_state(self, operation, state):
+        try:
+            operation.state_forwards(self.app_label, state)
+        except Exception as e:
+            exc_value = StateError(
+                'Error when mutating state in migration %s at operation "%s"' % (
+                    self, operation.describe(),
+                )
+            )
+            exc_value.__cause__ = e
+            six.reraise(StateError, exc_value, sys.exc_info()[2])
+
     def mutate_state(self, project_state, preserve=True):
         """
         Takes a ProjectState and returns a new one with the migration's
@@ -85,7 +100,7 @@ class Migration(object):
             new_state = project_state.clone()
 
         for operation in self.operations:
-            operation.state_forwards(self.app_label, new_state)
+            self._mutate_operation_state(operation, new_state)
         return new_state
 
     def apply(self, project_state, schema_editor, collect_sql=False):
@@ -112,15 +127,24 @@ class Migration(object):
                     continue
             # Save the state before the operation has run
             old_state = project_state.clone()
-            operation.state_forwards(self.app_label, project_state)
-            # Run the operation
-            if not schema_editor.connection.features.can_rollback_ddl and operation.atomic:
-                # We're forcing a transaction on a non-transactional-DDL backend
-                with atomic(schema_editor.connection.alias):
+            self._mutate_operation_state(operation, project_state)
+            try:
+                # Run the operation
+                if not schema_editor.connection.features.can_rollback_ddl and operation.atomic:
+                    # We're forcing a transaction on a non-transactional-DDL backend
+                    with atomic(schema_editor.connection.alias):
+                        operation.database_forwards(self.app_label, schema_editor, old_state, project_state)
+                else:
+                    # Normal behavior
                     operation.database_forwards(self.app_label, schema_editor, old_state, project_state)
-            else:
-                # Normal behaviour
-                operation.database_forwards(self.app_label, schema_editor, old_state, project_state)
+            except Exception as e:
+                exc_value = type(e)(
+                    'Error when applying migration %s at operation "%s"' % (
+                        self, operation.describe(),
+                    )
+                )
+                exc_value.__cause__ = e
+                raise exc_value
         return project_state
 
     def unapply(self, project_state, schema_editor, collect_sql=False):
@@ -148,7 +172,7 @@ class Migration(object):
             # over all operations
             new_state = new_state.clone()
             old_state = new_state.clone()
-            operation.state_forwards(self.app_label, new_state)
+            self._mutate_operation_state(operation, new_state)
             to_run.insert(0, (operation, old_state, new_state))
 
         # Phase 2
@@ -163,13 +187,22 @@ class Migration(object):
                 schema_editor.collected_sql.append("--")
                 if not operation.reduces_to_sql:
                     continue
-            if not schema_editor.connection.features.can_rollback_ddl and operation.atomic:
-                # We're forcing a transaction on a non-transactional-DDL backend
-                with atomic(schema_editor.connection.alias):
+            try:
+                if not schema_editor.connection.features.can_rollback_ddl and operation.atomic:
+                    # We're forcing a transaction on a non-transactional-DDL backend
+                    with atomic(schema_editor.connection.alias):
+                        operation.database_backwards(self.app_label, schema_editor, from_state, to_state)
+                else:
+                    # Normal behavior
                     operation.database_backwards(self.app_label, schema_editor, from_state, to_state)
-            else:
-                # Normal behaviour
-                operation.database_backwards(self.app_label, schema_editor, from_state, to_state)
+            except Exception as e:
+                exc_value = type(e)(
+                    'Error when unapplying migration %s at operation "%s"' % (
+                        self, operation.describe(),
+                    )
+                )
+                exc_value.__cause__ = e
+                raise exc_value
         return project_state
 
 
