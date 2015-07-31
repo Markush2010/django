@@ -189,6 +189,9 @@ class Command(BaseCommand):
                         "migrations, and then re-run 'manage.py migrate' to "
                         "apply them."
                     ))
+                    self.stdout.write(self.style.NOTICE(
+                        "  You're missing migrations in the following apps:\n    %s" % ', '.join(changes)
+                    ))
         else:
             fake = options.get("fake")
             fake_initial = options.get("fake_initial")
