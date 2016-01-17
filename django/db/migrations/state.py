@@ -644,6 +644,10 @@ class ModelStateOptions(object):
         return truncate_name(db_table, connection.ops.max_name_length())
 
     @cached_property
+    def db_tablespace(self):
+        return self.model.options.get('db_tablespace', None)
+
+    @cached_property
     def label(self):
         return '%s.%s' % (self.model.app_label, self.model.name)
 

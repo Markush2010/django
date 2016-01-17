@@ -535,14 +535,14 @@ class AlterUniqueTogether(FieldRelatedOptionOperation):
         state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
-        new_model = to_state.apps.get_model(app_label, self.name)
-        if self.allow_migrate_model(schema_editor.connection.alias, new_model):
-            old_model = from_state.apps.get_model(app_label, self.name)
+        to_model_state = to_state.models[app_label, self.name_lower]
+        if self.allow_migrate_model(schema_editor.connection.alias, to_model_state):
+            from_model_state = from_state.models[app_label, self.name_lower]
             with patch_project_state(schema_editor, to_state):
                 schema_editor.alter_unique_together(
-                    new_model,
-                    getattr(old_model._meta, self.option_name, set()),
-                    getattr(new_model._meta, self.option_name, set()),
+                    to_model_state,
+                    from_model_state.options.get(self.option_name, set()),
+                    to_model_state.options.get(self.option_name, set()),
                 )
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
@@ -590,14 +590,14 @@ class AlterIndexTogether(FieldRelatedOptionOperation):
         state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
-        new_model = to_state.apps.get_model(app_label, self.name)
-        if self.allow_migrate_model(schema_editor.connection.alias, new_model):
-            old_model = from_state.apps.get_model(app_label, self.name)
+        to_model_state = to_state.models[app_label, self.name_lower]
+        if self.allow_migrate_model(schema_editor.connection.alias, to_model_state):
+            from_model_state = from_state.models[app_label, self.name_lower]
             with patch_project_state(schema_editor, to_state):
                 schema_editor.alter_index_together(
-                    new_model,
-                    getattr(old_model._meta, self.option_name, set()),
-                    getattr(new_model._meta, self.option_name, set()),
+                    to_model_state,
+                    from_model_state.options.get(self.option_name, set()),
+                    to_model_state.options.get(self.option_name, set()),
                 )
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
