@@ -97,10 +97,10 @@ class CreateModel(ModelOperation):
                 schema_editor.create_model(model)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
-        model = from_state.apps.get_model(app_label, self.name)
-        if self.allow_migrate_model(schema_editor.connection.alias, model):
+        model_state = from_state.models[app_label, self.name_lower]
+        if self.allow_migrate_model(schema_editor.connection.alias, model_state):
             with patch_project_state(schema_editor, to_state):
-                schema_editor.delete_model(model)
+                schema_editor.delete_model(model_state)
 
     def describe(self):
         return "Create %smodel %s" % ("proxy " if self.options.get("proxy", False) else "", self.name)
@@ -237,10 +237,10 @@ class DeleteModel(ModelOperation):
         state.remove_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
-        model = from_state.apps.get_model(app_label, self.name)
-        if self.allow_migrate_model(schema_editor.connection.alias, model):
+        model_state = from_state.models[app_label, self.name_lower]
+        if self.allow_migrate_model(schema_editor.connection.alias, model_state):
             with patch_project_state(schema_editor, to_state):
-                schema_editor.delete_model(model)
+                schema_editor.delete_model(model_state)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         model = to_state.apps.get_model(app_label, self.name)

@@ -8,7 +8,8 @@ from contextlib import contextmanager
 from django.apps import AppConfig
 from django.apps.registry import Apps, apps as global_apps
 from django.conf import settings
-from django.db import models
+from django.db import connection, connections, models
+from django.db.backends.utils import truncate_name
 from django.db.models.fields.proxy import OrderWrt
 from django.db.models.fields.related import RECURSIVE_RELATIONSHIP_CONSTANT
 from django.db.models.options import DEFAULT_NAMES, normalize_together
@@ -101,6 +102,8 @@ class ProjectState(object):
             self.apps.clear_cache()
 
     def reload_model(self, app_label, model_name):
+        model_state = self.models[app_label, model_name]
+        model_state._propagate_field_attributes()
         if 'apps' in self.__dict__:  # hasattr would cache the property
             try:
                 old_model = self.apps.get_model(app_label, model_name)
@@ -112,7 +115,6 @@ class ProjectState(object):
                 related_models = get_related_models_recursive(old_model)
 
             # Get all outgoing references from the model to be rendered
-            model_state = self.models[(app_label, model_name)]
             # Directly related models are the models pointed to by ForeignKeys,
             # OneToOneFields, and ManyToManyFields.
             direct_related_models = set()
@@ -369,9 +371,21 @@ class ModelState(object):
                     "%r doesn't have one." % index
                 )
 
+        self._propagate_field_attributes()
+
+    def _propagate_field_attributes(self):
+        for name, field in self.fields:
+            # Propagate some internal attributes, e.g. field.column
+            # and assign field to this model
+            field.set_attributes_from_name(name)
+
     @cached_property
     def name_lower(self):
         return self.name.lower()
+
+    @cached_property
+    def _meta(self):
+        return ModelStateOptions(self)
 
     @classmethod
     def from_model(cls, model, exclude_rels=False):
@@ -604,3 +618,100 @@ class ModelState(object):
 
     def __ne__(self, other):
         return not (self == other)
+
+
+class ModelStateOptions(object):
+
+    def __init__(self, model):
+        self.model = model
+
+    def get_field(self, name):
+        return self.model.get_field_by_name(name)
+
+    @property
+    def app_label(self):
+        return self.model.app_label
+
+    @property
+    def model_name(self):
+        return self.model.name_lower
+
+    @cached_property
+    def db_table(self):
+        db_table = self.model.options.get('db_table')
+        if db_table is None:
+            db_table = "%s_%s" % (self.model.app_label, self.model.name_lower)
+        return truncate_name(db_table, connection.ops.max_name_length())
+
+    @cached_property
+    def label(self):
+        return '%s.%s' % (self.model.app_label, self.model.name)
+
+    @cached_property
+    def label_lower(self):
+        return '%s.%s' % (self.model.app_label, self.model.name_lower)
+
+    @cached_property
+    def managed(self):
+        return self.model.options.get('managed', True)
+
+    @cached_property
+    def order_with_respect_to(self):
+        return self.model.options.get('order_with_respect_to', None)
+
+    @cached_property
+    def proxy(self):
+        return self.model.options.get('proxy', False)
+
+    @cached_property
+    def required_db_features(self):
+        return self.model.options.get('required_db_features', [])
+
+    @cached_property
+    def required_db_vendor(self):
+        return self.model.options.get('required_db_vendor', None)
+
+    @cached_property
+    def swappable(self):
+        return self.model.options.get('swappable', None)
+
+    @cached_property
+    def swapped(self):
+        """
+        Has this model been swapped out for another? If so, return the model
+        name of the replacement; otherwise, return None.
+
+        For historical reasons, model name lookups using get_model() are
+        case insensitive, so we make sure we are case insensitive here.
+        """
+        if self.swappable:
+            swapped_for = getattr(settings, self.swappable, None)
+            if swapped_for:
+                try:
+                    swapped_label, swapped_object = swapped_for.split('.')
+                except ValueError:
+                    # setting not in the format app_label.model_name
+                    # raising ImproperlyConfigured here causes problems with
+                    # test cleanup code - instead it is raised in get_user_model
+                    # or as part of validation.
+                    return swapped_for
+
+                if '%s.%s' % (swapped_label, swapped_object.lower()) not in (None, self.label_lower):
+                    return swapped_for
+        return None
+
+    def can_migrate(self, conn):
+        """
+        Return True if the model can/should be migrated on the `connection`.
+        `connection` can be either a real connection or a connection alias.
+        """
+        if self.proxy or self.swapped or not self.managed:
+            return False
+        if isinstance(conn, six.string_types):
+            conn = connections[conn]
+        if self.required_db_vendor:
+            return self.required_db_vendor == conn.vendor
+        if self.required_db_features:
+            return all(getattr(conn.features, feat, False)
+                       for feat in self.required_db_features)
+        return True

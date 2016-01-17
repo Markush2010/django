@@ -3,6 +3,8 @@ import logging
 import warnings
 from datetime import datetime
 
+from django.db.backends.utils import truncate_name
+from django.db.migrations.state import ModelState
 from django.db.transaction import atomic
 from django.utils import six, timezone
 # from django.utils.deprecation import RemovedInDjango21Warning
@@ -318,10 +320,28 @@ class BaseDatabaseSchemaEditor(object):
         """
         Deletes a model from the database.
         """
-        # Handle auto-created intermediary models
-        for field in model._meta.local_many_to_many:
-            if field.remote_field.through._meta.auto_created:
-                self.delete_model(field.remote_field.through)
+        if isinstance(model, ModelState):
+            # We have a ModelState here
+            # Handle auto-created intermediary models
+            for name, field in model.fields:
+                if field.many_to_many and field.remote_field.auto_created is True:
+                    through_db_table = '%s_%s_%s' % (
+                        model.app_label, model.name_lower, name.lower(),
+                    )
+                    through_db_table = truncate_name(
+                        through_db_table,
+                        self.connection.ops.max_name_length()
+                    )
+                    self.execute(self.sql_delete_table % {
+                        "table": self.quote_name(through_db_table),
+                    })
+        else:
+            # We have a regular model here
+            warn_on_model_class_passed(self, self.delete_model)
+            # Handle auto-created intermediary models
+            for field in model._meta.local_many_to_many:
+                if field.remote_field.through._meta.auto_created:
+                    self.delete_model(field.remote_field.through)
 
         # Delete the table
         self.execute(self.sql_delete_table % {
