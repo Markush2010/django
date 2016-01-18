@@ -148,8 +148,7 @@ class BaseDatabaseSchemaEditor(object):
         The field must already have had set_attributes_from_name called.
         """
         # Get the column's type and use that as the basis of the SQL
-        db_params = field.db_parameters(connection=self.connection)
-        sql = db_params['type']
+        sql = self._get_db_type(model, field)
         params = []
         # Check for fields that aren't actually columns (e.g. M2M)
         if sql is None:
@@ -246,6 +245,28 @@ class BaseDatabaseSchemaEditor(object):
         """
         raise NotImplementedError()
 
+    def _get_db_type(self, model, field):
+        if isinstance(model, ModelState):
+            if field.remote_field and not field.many_to_many:
+                # relational field
+                return self._get_rel_field(model, field).rel_db_type(self.connection)
+            else:
+                return field.db_type(connection=self.connection)
+        else:
+            return field.db_type(connection=self.connection)
+
+    def _get_rel_field(self, model, field):
+        to_model = resolve_related_model(field.related_model, model)
+        to_model = self.project_state.get_model(*to_model)
+        if field.to_fields == [None]:
+            to_field = to_model._meta.pk
+        else:
+            to_field = to_model._meta.get_field(*field.to_fields)
+        if to_field is None:
+            to_field = models.AutoField(verbose_name='ID', primary_key=True, auto_created=True)
+            to_field.set_attributes_from_name('id')
+        return to_field
+
     # Actions
 
     def create_model(self, model):
@@ -253,69 +274,139 @@ class BaseDatabaseSchemaEditor(object):
         Takes a model and creates a table for it in the database.
         Will also create any accompanying indexes or unique constraints.
         """
-        # Create column SQL, add FK deferreds if needed
-        column_sqls = []
-        params = []
-        for field in model._meta.local_fields:
-            # SQL
-            definition, extra_params = self.column_sql(model, field)
-            if definition is None:
-                continue
-            # Check constraints can go on the column SQL here
-            db_params = field.db_parameters(connection=self.connection)
-            if db_params['check']:
-                definition += " CHECK (%s)" % db_params['check']
-            # Autoincrement SQL (for backends with inline variant)
-            col_type_suffix = field.db_type_suffix(connection=self.connection)
-            if col_type_suffix:
-                definition += " %s" % col_type_suffix
-            params.extend(extra_params)
-            # FK
-            if field.remote_field and field.db_constraint:
-                to_table = field.remote_field.model._meta.db_table
-                to_column = field.remote_field.model._meta.get_field(field.remote_field.field_name).column
-                if self.connection.features.supports_foreign_keys:
-                    self.deferred_sql.append(self._create_fk_sql(model, field, "_fk_%(to_table)s_%(to_column)s"))
-                elif self.sql_create_inline_fk:
-                    definition += " " + self.sql_create_inline_fk % {
-                        "to_table": self.quote_name(to_table),
-                        "to_column": self.quote_name(to_column),
-                    }
-            # Add the SQL to our big list
-            column_sqls.append("%s %s" % (
-                self.quote_name(field.column),
-                definition,
-            ))
-            # Autoincrement SQL (for backends with post table definition variant)
-            if field.get_internal_type() in ("AutoField", "BigAutoField"):
-                autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
-                if autoinc_sql:
-                    self.deferred_sql.extend(autoinc_sql)
+        if isinstance(model, ModelState):
+            # We have a ModelState here
+            # Create column SQL, add FK deferreds if needed
+            column_sqls = []
+            params = []
+            for name, field in model.fields:
+                # SQL
+                definition, extra_params = self.column_sql(model, field)
+                if definition is None:
+                    continue
+                # Check constraints can go on the column SQL here
+                db_param_check = field.db_check(connection=self.connection)
+                if db_param_check:
+                    definition += " CHECK (%s)" % db_param_check
+                # Autoincrement SQL (for backends with inline variant)
+                col_type_suffix = field.db_type_suffix(connection=self.connection)
+                if col_type_suffix:
+                    definition += " %s" % col_type_suffix
+                params.extend(extra_params)
+                # FK
+                if field.remote_field and field.db_constraint:
+                    to_model = resolve_related_model(field.related_model, model)
+                    to_model = self.project_state.get_model(*to_model)
+                    to_table = to_model._meta.db_table
+                    to_column = self._get_rel_field(model, field).column
+                    if self.connection.features.supports_foreign_keys:
+                        self.deferred_sql.append(self._create_fk_sql(
+                            model, field, "_fk_%(to_table)s_%(to_column)s")
+                        )
+                    elif self.sql_create_inline_fk:
+                        definition += " " + self.sql_create_inline_fk % {
+                            "to_table": self.quote_name(to_table),
+                            "to_column": self.quote_name(to_column),
+                        }
+                # Add the SQL to our big list
+                column_sqls.append("%s %s" % (
+                    self.quote_name(field.column),
+                    definition,
+                ))
+                # Autoincrement SQL (for backends with post table definition variant)
+                if field.get_internal_type() in ("AutoField", "BigAutoField"):
+                    autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
+                    if autoinc_sql:
+                        self.deferred_sql.extend(autoinc_sql)
 
-        # Add any unique_togethers (always deferred, as some fields might be
-        # created afterwards, like geometry fields with some backends)
-        for fields in model._meta.unique_together:
-            columns = [model._meta.get_field(field).column for field in fields]
-            self.deferred_sql.append(self._create_unique_sql(model, columns))
-        # Make the table
-        sql = self.sql_create_table % {
-            "table": self.quote_name(model._meta.db_table),
-            "definition": ", ".join(column_sqls)
-        }
-        if model._meta.db_tablespace:
-            tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
-            if tablespace_sql:
-                sql += ' ' + tablespace_sql
-        # Prevent using [] as params, in the case a literal '%' is used in the definition
-        self.execute(sql, params or None)
+            # Add any unique_togethers (always deferred, as some fields might be
+            # created afterwards, like geometry fields with some backends)
+            for fields in model._meta.unique_together:
+                columns = [model._meta.get_field(field).column for field in fields]
+                self.deferred_sql.append(self._create_unique_sql(model, columns))
+            # Make the table
+            sql = self.sql_create_table % {
+                "table": self.quote_name(model._meta.db_table),
+                "definition": ", ".join(column_sqls)
+            }
+            if model._meta.db_tablespace:
+                tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
+                if tablespace_sql:
+                    sql += ' ' + tablespace_sql
+            # Prevent using [] as params, in the case a literal '%' is used in the definition
+            self.execute(sql, params or None)
 
-        # Add any field index and index_together's (deferred as SQLite3 _remake_table needs it)
-        self.deferred_sql.extend(self._model_indexes_sql(model))
+            # Add any field index and index_together's (deferred as SQLite3 _remake_table needs it)
+            self.deferred_sql.extend(self._model_indexes_sql(model))
 
-        # Make M2M tables
-        for field in model._meta.local_many_to_many:
-            if field.remote_field.through._meta.auto_created:
-                self.create_model(field.remote_field.through)
+            # Make M2M tables
+            for name, field in model.fields:
+                if field.is_relation and field.many_to_many:  # same as in Options.add_field()
+                    self._create_m2m_model(model, field)
+        else:
+            # Create column SQL, add FK deferreds if needed
+            column_sqls = []
+            params = []
+            for field in model._meta.local_fields:
+                # SQL
+                definition, extra_params = self.column_sql(model, field)
+                if definition is None:
+                    continue
+                # Check constraints can go on the column SQL here
+                db_params = field.db_parameters(connection=self.connection)
+                if db_params['check']:
+                    definition += " CHECK (%s)" % db_params['check']
+                # Autoincrement SQL (for backends with inline variant)
+                col_type_suffix = field.db_type_suffix(connection=self.connection)
+                if col_type_suffix:
+                    definition += " %s" % col_type_suffix
+                params.extend(extra_params)
+                # FK
+                if field.remote_field and field.db_constraint:
+                    to_table = field.remote_field.model._meta.db_table
+                    to_column = field.remote_field.model._meta.get_field(field.remote_field.field_name).column
+                    if self.connection.features.supports_foreign_keys:
+                        self.deferred_sql.append(self._create_fk_sql(model, field, "_fk_%(to_table)s_%(to_column)s"))
+                    elif self.sql_create_inline_fk:
+                        definition += " " + self.sql_create_inline_fk % {
+                            "to_table": self.quote_name(to_table),
+                            "to_column": self.quote_name(to_column),
+                        }
+                # Add the SQL to our big list
+                column_sqls.append("%s %s" % (
+                    self.quote_name(field.column),
+                    definition,
+                ))
+                # Autoincrement SQL (for backends with post table definition variant)
+                if field.get_internal_type() in ("AutoField", "BigAutoField"):
+                    autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
+                    if autoinc_sql:
+                        self.deferred_sql.extend(autoinc_sql)
+
+            # Add any unique_togethers (always deferred, as some fields might be
+            # created afterwards, like geometry fields with some backends)
+            for fields in model._meta.unique_together:
+                columns = [model._meta.get_field(field).column for field in fields]
+                self.deferred_sql.append(self._create_unique_sql(model, columns))
+            # Make the table
+            sql = self.sql_create_table % {
+                "table": self.quote_name(model._meta.db_table),
+                "definition": ", ".join(column_sqls)
+            }
+            if model._meta.db_tablespace:
+                tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
+                if tablespace_sql:
+                    sql += ' ' + tablespace_sql
+            # Prevent using [] as params, in the case a literal '%' is used in the definition
+            self.execute(sql, params or None)
+
+            # Add any field index and index_together's (deferred as SQLite3 _remake_table needs it)
+            self.deferred_sql.extend(self._model_indexes_sql(model))
+
+            # Make M2M tables
+            for field in model._meta.local_many_to_many:
+                if field.remote_field.through._meta.auto_created:
+                    self.create_model(field.remote_field.through)
 
     def delete_model(self, model):
         """
@@ -1014,19 +1105,32 @@ class BaseDatabaseSchemaEditor(object):
         Return all index SQL statements (field indexes, index_together,
         Meta.indexes) for the specified model, as a list.
         """
-        if not model._meta.managed or model._meta.proxy or model._meta.swapped:
-            return []
-        output = []
-        for field in model._meta.local_fields:
-            output.extend(self._field_indexes_sql(model, field))
-
-        for field_names in model._meta.index_together:
-            fields = [model._meta.get_field(field) for field in field_names]
-            output.append(self._create_index_sql(model, fields, suffix="_idx"))
-
-        for index in model._meta.indexes:
-            output.append(index.create_sql(model, self))
-        return output
+        if isinstance(model, ModelState):
+            # We have a ModelState here
+            if not model._meta.managed or model._meta.proxy or model._meta.swapped:
+                return []
+            output = []
+            for name, field in model.fields:
+                if field.db_index and not field.unique:
+                    output.append(self._create_index_sql(model, [field], suffix=""))
+            for field_names in model._meta.index_together:
+                fields = [model._meta.get_field(field) for field in field_names]
+                output.append(self._create_index_sql(model, fields, suffix="_idx"))
+            for index in model._meta.indexes:
+                output.append(index.create_sql(model, self))
+            return output
+        else:
+            if not model._meta.managed or model._meta.proxy or model._meta.swapped:
+                return []
+            output = []
+            for field in model._meta.local_fields:
+                output.extend(self._field_indexes_sql(model, field))
+            for field_names in model._meta.index_together:
+                fields = [model._meta.get_field(field) for field in field_names]
+                output.append(self._create_index_sql(model, fields, suffix="_idx"))
+            for index in model._meta.indexes:
+                output.append(index.create_sql(model, self))
+            return output
 
     def _field_indexes_sql(self, model, field):
         """
@@ -1051,8 +1155,14 @@ class BaseDatabaseSchemaEditor(object):
     def _create_fk_sql(self, model, field, suffix):
         from_table = model._meta.db_table
         from_column = field.column
-        to_table = field.target_field.model._meta.db_table
-        to_column = field.target_field.column
+        if isinstance(model, ModelState):
+            to_model = resolve_related_model(field.related_model, model)
+            to_model = self.project_state.get_model(*to_model)
+            to_table = to_model._meta.db_table
+            to_column = self._get_rel_field(model, field).column
+        else:
+            to_table = field.target_field.model._meta.db_table
+            to_column = field.target_field.column
         suffix = suffix % {
             "to_table": to_table,
             "to_column": to_column,

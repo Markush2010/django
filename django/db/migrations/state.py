@@ -106,7 +106,12 @@ class ProjectState(object):
             self.reload_model(app_label, model_name)
 
     def get_model(self, app_label, model_name):
-        return self.models[app_label, model_name.lower()]
+        try:
+            model = self.models[app_label, model_name.lower()]
+        except KeyError:
+            # modebl = self.apps.get_model(app_label, model_name)
+            model = ModelState.from_model(global_apps.get_model(app_label, model_name))
+        return model
 
     def remove_model(self, app_label, model_name):
         del self.models[app_label, model_name]
@@ -663,6 +668,14 @@ class ModelStateOptions(object):
         return self.model.options.get('db_tablespace', None)
 
     @cached_property
+    def index_together(self):
+        return self.model.options.get('index_together', [])
+
+    @cached_property
+    def indexes(self):
+        return self.model.options.get('indexes', [])
+
+    @cached_property
     def label(self):
         return '%s.%s' % (self.model.app_label, self.model.name)
 
@@ -677,6 +690,12 @@ class ModelStateOptions(object):
     @cached_property
     def order_with_respect_to(self):
         return self.model.options.get('order_with_respect_to', None)
+
+    @cached_property
+    def pk(self):
+        for name, field in self.model.fields:
+            if field.primary_key:
+                return field
 
     @cached_property
     def proxy(self):
@@ -718,6 +737,10 @@ class ModelStateOptions(object):
                 if '%s.%s' % (swapped_label, swapped_object.lower()) not in (None, self.label_lower):
                     return swapped_for
         return None
+
+    @cached_property
+    def unique_together(self):
+        return self.model.options.get('unique_together', [])
 
     def can_migrate(self, conn):
         """

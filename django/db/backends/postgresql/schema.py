@@ -1,6 +1,7 @@
 import psycopg2
 
 from django.db.backends.base.schema import BaseDatabaseSchemaEditor
+from django.db.migrations.state import ModelState
 
 
 class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
@@ -20,17 +21,34 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _field_indexes_sql(self, model, field):
         output = super(DatabaseSchemaEditor, self)._field_indexes_sql(model, field)
-        like_index_statement = self._create_like_index_sql(model, field)
+        like_index_statement = self._create_like_index_sql(model, field)  # FOOOOOOO
         if like_index_statement is not None:
             output.append(like_index_statement)
         return output
+
+    # def _model_indexes_sql(self, model):
+    #     output = super(DatabaseSchemaEditor, self)._model_indexes_sql(model)
+    #     if not model._meta.managed or model._meta.proxy or model._meta.swapped:
+    #         return output
+    #     if isinstance(model, ModelState):
+    #         # We have a ModelState here
+    #         for name, field in model.fields:
+    #             like_index_statement = self._create_like_index_sql(model, field)
+    #             if like_index_statement is not None:
+    #                 output.append(like_index_statement)
+    #     else:
+    #         for field in model._meta.local_fields:
+    #             like_index_statement = self._create_like_index_sql(model, field)  # FOOOOOOO
+    #             if like_index_statement is not None:
+    #                 output.append(like_index_statement)
+    #     return output
 
     def _create_like_index_sql(self, model, field):
         """
         Return the statement to create an index with varchar operator pattern
         when the column type is 'varchar' or 'text', otherwise return None.
         """
-        db_type = field.db_type(connection=self.connection)
+        db_type = self._get_db_type(model, field)
         if db_type is not None and (field.db_index or field.unique):
             # Fields with database column types of `varchar` and `text` need
             # a second index that specifies their operator class, which is
