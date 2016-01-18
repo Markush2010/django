@@ -643,24 +643,24 @@ class AlterOrderWithRespectTo(FieldRelatedOptionOperation):
         state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
-        to_model = to_state.apps.get_model(app_label, self.name)
-        if self.allow_migrate_model(schema_editor.connection.alias, to_model):
-            from_model = from_state.apps.get_model(app_label, self.name)
+        to_model_state = to_state.models[app_label, self.name_lower]
+        if self.allow_migrate_model(schema_editor.connection.alias, to_model_state):
             from_model_state = from_state.models[app_label, self.name_lower]
             # Remove a field if we need to
-            if from_model_state._meta.order_with_respect_to and not to_model._meta.order_with_respect_to:
-                owr_field = OrderWrt()
-                owr_field.set_attributes_from_name("_order")
+            if from_model_state._meta.order_with_respect_to and not to_model_state._meta.order_with_respect_to:
+                field = OrderWrt()
+                field.set_attributes_from_name("_order")
                 with patch_project_state(schema_editor, to_state):
-                    schema_editor.remove_field(from_model_state, owr_field)
+                    schema_editor.remove_field(from_model_state, field)
             # Add a field if we need to (altering the column is untouched as
             # it's likely a rename)
-            elif to_model._meta.order_with_respect_to and not from_model_state._meta.order_with_respect_to:
-                field = to_model._meta.get_field("_order")
+            elif to_model_state._meta.order_with_respect_to and not from_model_state._meta.order_with_respect_to:
+                field = OrderWrt()
+                field.set_attributes_from_name("_order")
                 if not field.has_default():
                     field.default = 0
                 with patch_project_state(schema_editor, to_state):
-                    schema_editor.add_field(from_model, field)
+                    schema_editor.add_field(from_model_state, field)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         self.database_forwards(app_label, schema_editor, from_state, to_state)

@@ -435,9 +435,17 @@ class BaseDatabaseSchemaEditor(object):
         Usually involves adding a column, but may involve adding a
         table instead (for M2M fields)
         """
-        # Special-case implicit M2M tables
-        if field.many_to_many and field.remote_field.through._meta.auto_created:
-            return self.create_model(field.remote_field.through)
+        if isinstance(model, ModelState):
+            # Special-case implicit M2M tables
+            if field.many_to_many and not field.remote_field.through:
+                # return self.create_model(field.remote_field.through)
+                raise NotImplementedError("implement implicit m2m table creation")
+        else:
+            warn_on_model_class_passed(self, self.add_field)
+            # Special-case implicit M2M tables
+            if field.many_to_many and field.remote_field.through._meta.auto_created:
+                return self.create_model(field.remote_field.through)
+
         # Get the column's definition
         definition, params = self.column_sql(model, field, include_default=True)
         # It might not actually have a column behind it
@@ -464,7 +472,7 @@ class BaseDatabaseSchemaEditor(object):
                 }
             }
             self.execute(sql)
-        # Add an index, if required
+        # Add field indexes
         self.deferred_sql.extend(self._field_indexes_sql(model, field))
         # Add any FK constraints later
         if field.remote_field and self.connection.features.supports_foreign_keys and field.db_constraint:
@@ -483,6 +491,8 @@ class BaseDatabaseSchemaEditor(object):
                 field_name = field
                 field = model.get_field_by_name(field_name)
             else:
+                # This case is used for the OrderWrt field changes, as the "_order"
+                # field is not serialized into the ModelState
                 field_name = field.name
             # Special-case implicit M2M tables
             if field.many_to_many:
