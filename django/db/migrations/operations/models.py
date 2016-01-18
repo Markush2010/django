@@ -3,6 +3,7 @@ from __future__ import unicode_literals
 from django.db import models
 from django.db.migrations.operations.base import Operation, patch_project_state
 from django.db.migrations.state import ModelState
+from django.db.models import OrderWrt
 from django.db.models.options import normalize_together
 from django.utils import six
 from django.utils.functional import cached_property
@@ -645,13 +646,16 @@ class AlterOrderWithRespectTo(FieldRelatedOptionOperation):
         to_model = to_state.apps.get_model(app_label, self.name)
         if self.allow_migrate_model(schema_editor.connection.alias, to_model):
             from_model = from_state.apps.get_model(app_label, self.name)
+            from_model_state = from_state.models[app_label, self.name_lower]
             # Remove a field if we need to
-            if from_model._meta.order_with_respect_to and not to_model._meta.order_with_respect_to:
+            if from_model_state._meta.order_with_respect_to and not to_model._meta.order_with_respect_to:
+                owr_field = OrderWrt()
+                owr_field.set_attributes_from_name("_order")
                 with patch_project_state(schema_editor, to_state):
-                    schema_editor.remove_field(from_model, from_model._meta.get_field("_order"))
+                    schema_editor.remove_field(from_model_state, owr_field)
             # Add a field if we need to (altering the column is untouched as
             # it's likely a rename)
-            elif to_model._meta.order_with_respect_to and not from_model._meta.order_with_respect_to:
+            elif to_model._meta.order_with_respect_to and not from_model_state._meta.order_with_respect_to:
                 field = to_model._meta.get_field("_order")
                 if not field.has_default():
                     field.default = 0

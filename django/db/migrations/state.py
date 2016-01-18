@@ -32,6 +32,18 @@ def _get_app_label_and_model_name(model, app_label=''):
         return model._meta.app_label, model._meta.model_name
 
 
+def resolve_related_model(related_model, base_model):
+    if isinstance(base_model, (models.Model, ModelState)):
+        base_model = base_model._meta.label
+    this_al, this_mn = _get_app_label_and_model_name(base_model)
+    if related_model == RECURSIVE_RELATIONSHIP_CONSTANT:
+        to_al, to_mn = this_al, this_mn
+    else:
+        to_al, to_mn = _get_app_label_and_model_name(related_model, this_al)
+    assert to_al, "No app_label found when resolving relationship between %s to %s" % (base_model, related_model)
+    return to_al, to_mn
+
+
 def _get_related_models(m):
     """
     Return all models that have a direct relationship to the given model.
@@ -92,6 +104,9 @@ class ProjectState(object):
         self.models[(app_label, model_name)] = model_state
         if 'apps' in self.__dict__:  # hasattr would cache the property
             self.reload_model(app_label, model_name)
+
+    def get_model(self, app_label, model_name):
+        return self.models[app_label, model_name.lower()]
 
     def remove_model(self, app_label, model_name):
         del self.models[app_label, model_name]
