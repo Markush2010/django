@@ -1,9 +1,11 @@
 import hashlib
 import logging
+import warnings
 from datetime import datetime
 
 from django.db.transaction import atomic
 from django.utils import six, timezone
+# from django.utils.deprecation import RemovedInDjango21Warning
 from django.utils.encoding import force_bytes
 
 logger = logging.getLogger('django.db.backends.schema')
@@ -15,6 +17,17 @@ def _related_non_m2m_objects(old_field, new_field):
     return zip(
         (obj for obj in old_field.model._meta.related_objects if not obj.field.many_to_many),
         (obj for obj in new_field.model._meta.related_objects if not obj.field.many_to_many)
+    )
+
+
+def warn_on_model_class_passed(self, func):
+    warnings.warn(
+        "The handling of model classes in method {}.{}.{} is deprecated and will be removed in Django 2.0. "
+        "Use django.db.migrations.state.ModelState instead.".format(
+            self.__class__.__module__, self.__class__.__name__, func.__name__
+        ),
+        DeprecationWarning
+        # RemovedInDjango21Warning
     )
 
 
