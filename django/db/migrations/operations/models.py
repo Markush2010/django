@@ -1,7 +1,7 @@
 from __future__ import unicode_literals
 
 from django.db import models
-from django.db.migrations.operations.base import Operation
+from django.db.migrations.operations.base import Operation, patch_project_state
 from django.db.migrations.state import ModelState
 from django.db.models.options import normalize_together
 from django.utils import six
@@ -93,12 +93,14 @@ class CreateModel(ModelOperation):
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         model = to_state.apps.get_model(app_label, self.name)
         if self.allow_migrate_model(schema_editor.connection.alias, model):
-            schema_editor.create_model(model)
+            with patch_project_state(schema_editor, to_state):
+                schema_editor.create_model(model)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         model = from_state.apps.get_model(app_label, self.name)
         if self.allow_migrate_model(schema_editor.connection.alias, model):
-            schema_editor.delete_model(model)
+            with patch_project_state(schema_editor, to_state):
+                schema_editor.delete_model(model)
 
     def describe(self):
         return "Create %smodel %s" % ("proxy " if self.options.get("proxy", False) else "", self.name)
@@ -237,12 +239,14 @@ class DeleteModel(ModelOperation):
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         model = from_state.apps.get_model(app_label, self.name)
         if self.allow_migrate_model(schema_editor.connection.alias, model):
-            schema_editor.delete_model(model)
+            with patch_project_state(schema_editor, to_state):
+                schema_editor.delete_model(model)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         model = to_state.apps.get_model(app_label, self.name)
         if self.allow_migrate_model(schema_editor.connection.alias, model):
-            schema_editor.create_model(model)
+            with patch_project_state(schema_editor, to_state):
+                schema_editor.create_model(model)
 
     def describe(self):
         return "Delete model %s" % (self.name, )
@@ -534,11 +538,12 @@ class AlterUniqueTogether(FieldRelatedOptionOperation):
         new_model = to_state.apps.get_model(app_label, self.name)
         if self.allow_migrate_model(schema_editor.connection.alias, new_model):
             old_model = from_state.apps.get_model(app_label, self.name)
-            schema_editor.alter_unique_together(
-                new_model,
-                getattr(old_model._meta, self.option_name, set()),
-                getattr(new_model._meta, self.option_name, set()),
-            )
+            with patch_project_state(schema_editor, to_state):
+                schema_editor.alter_unique_together(
+                    new_model,
+                    getattr(old_model._meta, self.option_name, set()),
+                    getattr(new_model._meta, self.option_name, set()),
+                )
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         return self.database_forwards(app_label, schema_editor, from_state, to_state)
@@ -588,11 +593,12 @@ class AlterIndexTogether(FieldRelatedOptionOperation):
         new_model = to_state.apps.get_model(app_label, self.name)
         if self.allow_migrate_model(schema_editor.connection.alias, new_model):
             old_model = from_state.apps.get_model(app_label, self.name)
-            schema_editor.alter_index_together(
-                new_model,
-                getattr(old_model._meta, self.option_name, set()),
-                getattr(new_model._meta, self.option_name, set()),
-            )
+            with patch_project_state(schema_editor, to_state):
+                schema_editor.alter_index_together(
+                    new_model,
+                    getattr(old_model._meta, self.option_name, set()),
+                    getattr(new_model._meta, self.option_name, set()),
+                )
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         return self.database_forwards(app_label, schema_editor, from_state, to_state)
@@ -641,17 +647,16 @@ class AlterOrderWithRespectTo(FieldRelatedOptionOperation):
             from_model = from_state.apps.get_model(app_label, self.name)
             # Remove a field if we need to
             if from_model._meta.order_with_respect_to and not to_model._meta.order_with_respect_to:
-                schema_editor.remove_field(from_model, from_model._meta.get_field("_order"))
+                with patch_project_state(schema_editor, to_state):
+                    schema_editor.remove_field(from_model, from_model._meta.get_field("_order"))
             # Add a field if we need to (altering the column is untouched as
             # it's likely a rename)
             elif to_model._meta.order_with_respect_to and not from_model._meta.order_with_respect_to:
                 field = to_model._meta.get_field("_order")
                 if not field.has_default():
                     field.default = 0
-                schema_editor.add_field(
-                    from_model,
-                    field,
-                )
+                with patch_project_state(schema_editor, to_state):
+                    schema_editor.add_field(from_model, field)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         self.database_forwards(app_label, schema_editor, from_state, to_state)

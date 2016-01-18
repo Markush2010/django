@@ -3,7 +3,7 @@ from __future__ import unicode_literals
 from django.db.models.fields import NOT_PROVIDED
 from django.utils.functional import cached_property
 
-from .base import Operation
+from .base import Operation, patch_project_state
 
 
 class FieldOperation(Operation):
@@ -79,17 +79,16 @@ class AddField(FieldOperation):
             field = to_model._meta.get_field(self.name)
             if not self.preserve_default:
                 field.default = self.field.default
-            schema_editor.add_field(
-                from_model,
-                field,
-            )
+            with patch_project_state(schema_editor, to_state):
+                schema_editor.add_field(from_model, field)
             if not self.preserve_default:
                 field.default = NOT_PROVIDED
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         from_model = from_state.apps.get_model(app_label, self.model_name)
         if self.allow_migrate_model(schema_editor.connection.alias, from_model):
-            schema_editor.remove_field(from_model, from_model._meta.get_field(self.name))
+            with patch_project_state(schema_editor, from_state):
+                schema_editor.remove_field(from_model, from_model._meta.get_field(self.name))
 
     def describe(self):
         return "Add field %s to %s" % (self.name, self.model_name)
@@ -144,13 +143,15 @@ class RemoveField(FieldOperation):
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         from_model = from_state.apps.get_model(app_label, self.model_name)
         if self.allow_migrate_model(schema_editor.connection.alias, from_model):
-            schema_editor.remove_field(from_model, from_model._meta.get_field(self.name))
+            with patch_project_state(schema_editor, from_state):
+                schema_editor.remove_field(from_model, from_model._meta.get_field(self.name))
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         to_model = to_state.apps.get_model(app_label, self.model_name)
         if self.allow_migrate_model(schema_editor.connection.alias, to_model):
             from_model = from_state.apps.get_model(app_label, self.model_name)
-            schema_editor.add_field(from_model, to_model._meta.get_field(self.name))
+            with patch_project_state(schema_editor, to_state):
+                schema_editor.add_field(from_model, to_model._meta.get_field(self.name))
 
     def describe(self):
         return "Remove field %s from %s" % (self.name, self.model_name)
