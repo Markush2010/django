@@ -3,6 +3,7 @@ import logging
 import warnings
 from datetime import datetime
 
+from django.db import models
 from django.db.backends.utils import truncate_name
 from django.db.migrations.state import ModelState, resolve_related_model
 from django.db.transaction import atomic
@@ -438,8 +439,7 @@ class BaseDatabaseSchemaEditor(object):
         if isinstance(model, ModelState):
             # Special-case implicit M2M tables
             if field.many_to_many and not field.remote_field.through:
-                # return self.create_model(field.remote_field.through)
-                raise NotImplementedError("implement implicit m2m table creation")
+                return self._create_m2m_model(model, field)
         else:
             warn_on_model_class_passed(self, self.add_field)
             # Special-case implicit M2M tables
@@ -480,6 +480,50 @@ class BaseDatabaseSchemaEditor(object):
         # Reset connection if required
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
+
+    def _create_m2m_model(self, model, field):
+        name = '%s_%s' % (model.name, field.name)
+        to_model = resolve_related_model(field.remote_field.model, model)
+        to = to_model[1].lower()
+        from_ = model.name_lower
+        if to == from_:
+            to = 'to_%s' % to
+            from_ = 'from_%s' % from_
+        fields = [
+            ('id', models.AutoField(
+                verbose_name='ID',
+                primary_key=True,
+                auto_created=True,
+            )),
+            (from_, models.ForeignKey(
+                model._meta.label,
+                related_name='%s+' % name,
+                db_tablespace=field.db_tablespace,
+                db_constraint=field.remote_field.db_constraint,
+                on_delete=models.CASCADE,
+            )),
+            (to, models.ForeignKey(
+                '.'.join(to_model),
+                related_name='%s+' % name,
+                db_tablespace=field.db_tablespace,
+                db_constraint=field.remote_field.db_constraint,
+                on_delete=models.CASCADE,
+            )),
+        ]
+        options = {
+            'db_table': field._get_m2m_db_table(model._meta),
+            'db_tablespace': model._meta.db_tablespace,
+            'unique_together': ((from_, to),),
+            'verbose_name': '%(from)s-%(to)s relationship' % {'from': from_, 'to': to},
+            'verbose_name_plural': '%(from)s-%(to)s relationships' % {'from': from_, 'to': to},
+        }
+        model = ModelState(
+            app_label=model.app_label,
+            name=name,
+            fields=fields,
+            options=options,
+        )
+        self.create_model(model)
 
     def remove_field(self, model, field):
         """
