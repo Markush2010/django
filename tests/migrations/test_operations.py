@@ -353,8 +353,9 @@ class OperationTests(OperationTestBase):
         self.assertColumnNotExists("test_crmomm_stable", "ponies")
         # Make sure the M2M field actually works
         with atomic():
-            Pony = new_state.apps.get_model("test_crmomm", "Pony")
-            Stable = new_state.apps.get_model("test_crmomm", "Stable")
+            new_state_apps = new_state.apps
+            Pony = new_state_apps.get_model("test_crmomm", "Pony")
+            Stable = new_state_apps.get_model("test_crmomm", "Stable")
             stable = Stable.objects.create()
             p1 = Pony.objects.create(pink=False, weight=4.55)
             p2 = Pony.objects.create(pink=True, weight=5.43)
@@ -711,8 +712,9 @@ class OperationTests(OperationTestBase):
                 ("riders", models.ManyToManyField("Rider")),
             ]),
         ])
-        Pony = project_state.apps.get_model(app_label, "Pony")
-        Rider = project_state.apps.get_model(app_label, "Rider")
+        project_state_apps = project_state.apps
+        Pony = project_state_apps.get_model(app_label, "Pony")
+        Rider = project_state_apps.get_model(app_label, "Rider")
         pony = Pony.objects.create()
         rider = Rider.objects.create()
         pony.riders.add(rider)
@@ -720,8 +722,9 @@ class OperationTests(OperationTestBase):
         project_state = self.apply_operations(app_label, project_state, operations=[
             migrations.RenameModel("Pony", "Pony2"),
         ])
-        Pony = project_state.apps.get_model(app_label, "Pony2")
-        Rider = project_state.apps.get_model(app_label, "Rider")
+        project_state_apps = project_state.apps
+        Pony = project_state_apps.get_model(app_label, "Pony2")
+        Rider = project_state_apps.get_model(app_label, "Rider")
         pony = Pony.objects.create()
         rider = Rider.objects.create()
         pony.riders.add(rider)
@@ -740,8 +743,9 @@ class OperationTests(OperationTestBase):
                 ("riders", models.ManyToManyField("Rider")),
             ]),
         ])
-        Pony = project_state.apps.get_model(app_label, "Pony")
-        Rider = project_state.apps.get_model(app_label, "Rider")
+        project_state_apps = project_state.apps
+        Pony = project_state_apps.get_model(app_label, "Pony")
+        Rider = project_state_apps.get_model(app_label, "Rider")
         pony = Pony.objects.create()
         rider = Rider.objects.create()
         pony.riders.add(rider)
@@ -749,8 +753,9 @@ class OperationTests(OperationTestBase):
         project_state = self.apply_operations(app_label, project_state, operations=[
             migrations.RenameModel("Rider", "Rider2"),
         ])
-        Pony = project_state.apps.get_model(app_label, "Pony")
-        Rider = project_state.apps.get_model(app_label, "Rider2")
+        project_state_apps = project_state.apps
+        Pony = project_state_apps.get_model(app_label, "Pony")
+        Rider = project_state_apps.get_model(app_label, "Rider2")
         pony = Pony.objects.create()
         rider = Rider.objects.create()
         pony.riders.add(rider)

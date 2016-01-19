@@ -323,7 +323,6 @@ class RenameModel(ModelOperation):
                     field.remote_field.model = "%s.%s" % (app_label, self.new_name)
                 new_fields.append((name, field))
             state.models[related_key].fields = new_fields
-            state.reload_model(*related_key)
         # Repoint M2Ms with through pointing to us
         related_models = {
             f.remote_field.model for f in model._meta.fields
@@ -345,8 +344,6 @@ class RenameModel(ModelOperation):
                 new_fields.append((name, field))
             if changed:
                 state.models[related_key].fields = new_fields
-                state.reload_model(*related_key)
-        state.reload_model(app_label, self.new_name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         new_model = to_state.apps.get_model(app_label, self.new_name)
@@ -456,7 +453,6 @@ class AlterModelTable(ModelOperation):
 
     def state_forwards(self, app_label, state):
         state.models[app_label, self.name_lower].options["db_table"] = self.table
-        state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         new_model = to_state.apps.get_model(app_label, self.name)
@@ -533,7 +529,6 @@ class AlterUniqueTogether(FieldRelatedOptionOperation):
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
         model_state.options[self.option_name] = self.unique_together
-        state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         to_model_state = to_state.models[app_label, self.name_lower]
@@ -588,7 +583,6 @@ class AlterIndexTogether(FieldRelatedOptionOperation):
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
         model_state.options[self.option_name] = self.index_together
-        state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         to_model_state = to_state.models[app_label, self.name_lower]
@@ -640,7 +634,6 @@ class AlterOrderWithRespectTo(FieldRelatedOptionOperation):
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
         model_state.options['order_with_respect_to'] = self.order_with_respect_to
-        state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         to_model_state = to_state.models[app_label, self.name_lower]
@@ -721,7 +714,6 @@ class AlterModelOptions(ModelOptionOperation):
         for key in self.ALTER_OPTION_KEYS:
             if key not in self.options and key in model_state.options:
                 del model_state.options[key]
-        state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         pass
@@ -754,7 +746,6 @@ class AlterModelManagers(ModelOptionOperation):
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
         model_state.managers = list(self.managers)
-        state.reload_model(app_label, self.name_lower)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         pass

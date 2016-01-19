@@ -551,12 +551,10 @@ class StateTests(SimpleTestCase):
         project_state.add_model(ModelState.from_model(B))
         project_state.add_model(ModelState.from_model(C))
 
-        project_state.apps  # We need to work with rendered models
-
-        old_state = project_state.clone()
-        model_a_old = old_state.apps.get_model('something', 'A')
-        model_b_old = old_state.apps.get_model('something', 'B')
-        model_c_old = old_state.apps.get_model('something', 'C')
+        old_state_apps = project_state.clone().apps
+        model_a_old = old_state_apps.get_model('something', 'A')
+        model_b_old = old_state_apps.get_model('something', 'B')
+        model_c_old = old_state_apps.get_model('something', 'C')
         # Check that the relations between the old models are correct
         self.assertIs(model_a_old._meta.get_field('b').related_model, model_b_old)
         self.assertIs(model_b_old._meta.get_field('a_ptr').related_model, model_a_old)
@@ -567,9 +565,10 @@ class StateTests(SimpleTestCase):
             related_name='from_c',
         ))
         operation.state_forwards('something', project_state)
-        model_a_new = project_state.apps.get_model('something', 'A')
-        model_b_new = project_state.apps.get_model('something', 'B')
-        model_c_new = project_state.apps.get_model('something', 'C')
+        project_state_apps = project_state.apps  # We need to work with rendered models
+        model_a_new = project_state_apps.get_model('something', 'A')
+        model_b_new = project_state_apps.get_model('something', 'B')
+        model_c_new = project_state_apps.get_model('something', 'C')
 
         # Check that all models have changed
         self.assertIsNot(model_a_old, model_a_new)

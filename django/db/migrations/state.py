@@ -101,87 +101,17 @@ class ProjectState(object):
 
     def add_model(self, model_state):
         app_label, model_name = model_state.app_label, model_state.name_lower
-        self.models[(app_label, model_name)] = model_state
-        if 'apps' in self.__dict__:  # hasattr would cache the property
-            self.reload_model(app_label, model_name)
+        self.models[app_label, model_name] = model_state
 
     def get_model(self, app_label, model_name):
         try:
             model = self.models[app_label, model_name.lower()]
         except KeyError:
-            # modebl = self.apps.get_model(app_label, model_name)
             model = ModelState.from_model(global_apps.get_model(app_label, model_name))
         return model
 
     def remove_model(self, app_label, model_name):
         del self.models[app_label, model_name]
-        if 'apps' in self.__dict__:  # hasattr would cache the property
-            self.apps.unregister_model(app_label, model_name)
-            # Need to do this explicitly since unregister_model() doesn't clear
-            # the cache automatically (#24513)
-            self.apps.clear_cache()
-
-    def reload_model(self, app_label, model_name):
-        model_state = self.models[app_label, model_name]
-        model_state._propagate_field_attributes()
-        if 'apps' in self.__dict__:  # hasattr would cache the property
-            try:
-                old_model = self.apps.get_model(app_label, model_name)
-            except LookupError:
-                related_models = set()
-            else:
-                # Get all relations to and from the old model before reloading,
-                # as _meta.apps may change
-                related_models = get_related_models_recursive(old_model)
-
-            # Get all outgoing references from the model to be rendered
-            # Directly related models are the models pointed to by ForeignKeys,
-            # OneToOneFields, and ManyToManyFields.
-            direct_related_models = set()
-            for name, field in model_state.fields:
-                if field.is_relation:
-                    if field.remote_field.model == RECURSIVE_RELATIONSHIP_CONSTANT:
-                        continue
-                    rel_app_label, rel_model_name = _get_app_label_and_model_name(field.related_model, app_label)
-                    direct_related_models.add((rel_app_label, rel_model_name.lower()))
-
-            # For all direct related models recursively get all related models.
-            related_models.update(direct_related_models)
-            for rel_app_label, rel_model_name in direct_related_models:
-                try:
-                    rel_model = self.apps.get_model(rel_app_label, rel_model_name)
-                except LookupError:
-                    pass
-                else:
-                    related_models.update(get_related_models_recursive(rel_model))
-
-            # Include the model itself
-            related_models.add((app_label, model_name))
-
-            # Unregister all related models
-            with self.apps.bulk_update():
-                for rel_app_label, rel_model_name in related_models:
-                    self.apps.unregister_model(rel_app_label, rel_model_name)
-
-            states_to_be_rendered = []
-            # Gather all models states of those models that will be rerendered.
-            # This includes:
-            # 1. All related models of unmigrated apps
-            for model_state in self.apps.real_models:
-                if (model_state.app_label, model_state.name_lower) in related_models:
-                    states_to_be_rendered.append(model_state)
-
-            # 2. All related models of migrated apps
-            for rel_app_label, rel_model_name in related_models:
-                try:
-                    model_state = self.models[rel_app_label, rel_model_name]
-                except KeyError:
-                    pass
-                else:
-                    states_to_be_rendered.append(model_state)
-
-            # Render all models
-            self.apps.render_multiple(states_to_be_rendered)
 
     def clone(self):
         "Returns an exact copy of this ProjectState"
@@ -189,18 +119,15 @@ class ProjectState(object):
             models={k: v.clone() for k, v in self.models.items()},
             real_apps=self.real_apps,
         )
-        if 'apps' in self.__dict__:
-            new_state.apps = self.apps.clone()
         return new_state
 
-    @cached_property
+    @property
     def apps(self):
         return StateApps(self.real_apps, self.models)
 
     @property
     def concrete_apps(self):
-        self.apps = StateApps(self.real_apps, self.models, ignore_swappable=True)
-        return self.apps
+        return StateApps(self.real_apps, self.models, ignore_swappable=True)
 
     @classmethod
     def from_apps(cls, apps):
@@ -569,10 +496,10 @@ class ModelState(object):
         return self.__class__(
             app_label=self.app_label,
             name=self.name,
-            fields=list(self.fields),
+            fields=list((name, field.clone()) for name, field in self.fields),
             options=dict(self.options),
             bases=self.bases,
-            managers=list(self.managers),
+            managers=list((name, manager.clone()) for name, manager in self.managers),
         )
 
     def render(self, apps):
