@@ -1064,8 +1064,8 @@ def create_forward_many_to_many_manager(superclass, rel, reverse):
                         new_ids.add(fk_val)
                     elif isinstance(obj, Model):
                         raise TypeError(
-                            "'%s' instance expected, got %r" %
-                            (self.model._meta.object_name, obj)
+                            "'%r' instance expected, got %r (%r)" %
+                            (self.model, obj, type(obj))
                         )
                     else:
                         new_ids.add(obj)
