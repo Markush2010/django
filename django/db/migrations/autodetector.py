@@ -543,7 +543,7 @@ class MigrationAutodetector(object):
                 app_label,
                 operations.CreateModel(
                     name=model_state.name,
-                    fields=[d for d in model_state.fields if d[0] not in related_fields],
+                    fields=[(d[0], d[1].clone()) for d in model_state.fields if d[0] not in related_fields],
                     options=model_state.options,
                     bases=model_state.bases,
                     managers=model_state.managers,
@@ -567,7 +567,7 @@ class MigrationAutodetector(object):
                     operations.AddField(
                         model_name=model_name,
                         name=name,
-                        field=field,
+                        field=field.clone(),
                     ),
                     dependencies=list(set(dependencies)),
                 )

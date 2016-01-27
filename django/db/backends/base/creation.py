@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import sys
 import time
 
@@ -59,6 +61,28 @@ class BaseDatabaseCreation(object):
         settings.DATABASES[self.connection.alias]["NAME"] = test_database_name
         self.connection.settings_dict["NAME"] = test_database_name
 
+        from django.db.migrations.autodetector import MigrationAutodetector
+        from django.db.migrations.executor import MigrationExecutor
+        from django.db.migrations.graph import MigrationGraph
+        from django.db.migrations.loader import MigrationLoader
+        from django.db.migrations.questioner import MigrationQuestioner
+        from django.db.migrations.state import ProjectState
+
+        questioner = MigrationQuestioner(defaults={'ask_initial': True})
+        autodetector = MigrationAutodetector(
+            ProjectState(),
+            ProjectState.from_apps(apps),
+            questioner,
+        )
+        changes = autodetector.changes(MigrationGraph())
+        loader = MigrationLoader(self.connection, load=False, ignore_no_migrations=True)
+        loader.load_disk()
+        loader.load_from_changes(changes)
+        loader.build_graph(load_disk=False)
+        executor = MigrationExecutor(self.connection)
+        executor.loader = loader
+        executor.migrate(loader.graph.leaf_nodes())
+
         # We report migrate messages at one level lower than that requested.
         # This ensures we don't get flooded with messages during testing
         # (unless you really ask to be flooded).
@@ -67,7 +91,7 @@ class BaseDatabaseCreation(object):
             verbosity=max(verbosity - 1, 0),
             interactive=False,
             database=self.connection.alias,
-            run_syncdb=True,
+            # run_syncdb=True,
         )
 
         # We then serialize the current state of the database into a string

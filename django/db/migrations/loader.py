@@ -112,6 +112,12 @@ class MigrationLoader(object):
                     app_config.label,
                 )
 
+    def load_from_changes(self, changes):
+        for app, migrations in six.iteritems(changes):
+            self.migrated_apps.add(app)
+            for migration in migrations:
+                self.disk_migrations[app, migration.name] = migration
+
     def get_migration(self, app_label, name_prefix):
         "Gets the migration exactly named, or raises `graph.NodeNotFoundError`"
         return self.graph.nodes[app_label, name_prefix]
@@ -160,14 +166,15 @@ class MigrationLoader(object):
                     raise ValueError("Dependency on app with no migrations: %s" % key[0])
         raise ValueError("Dependency on unknown app: %s" % key[0])
 
-    def build_graph(self):
+    def build_graph(self, load_disk=True):
         """
         Builds a migration dependency graph using both the disk and database.
         You'll need to rebuild the graph if you apply migrations. This isn't
         usually a problem as generally migration stuff runs in a one-shot process.
         """
-        # Load disk data
-        self.load_disk()
+        if load_disk:
+            # Load disk data
+            self.load_disk()
         # Load database data
         if self.connection is None:
             self.applied_migrations = set()
