@@ -210,11 +210,8 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='RangeLookupsModel',
             fields=[
-                ('parent', models.ForeignKey(
-                    'postgres_tests.RangesModel',
-                    models.SET_NULL,
-                    blank=True, null=True,
-                )),
+                ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
+                ('parent', models.ForeignKey('postgres_tests.RangesModel', models.SET_NULL, blank=True, null=True)),
                 ('integer', models.IntegerField(blank=True, null=True)),
                 ('big_integer', models.BigIntegerField(blank=True, null=True)),
                 ('float', models.FloatField(blank=True, null=True)),
