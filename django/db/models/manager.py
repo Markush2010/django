@@ -75,6 +75,18 @@ class BaseManager(object):
                 self._constructor_args[1],  # kwargs
             )
 
+    def clone(self):
+        """
+        Uses deconstruct() to clone a new copy of this Manager.
+        Will not preserve any class attachments/attribute names.
+        """
+        as_manager, manager_path, qs_path, args, kwargs = self.deconstruct()
+        if as_manager:
+            qs_class = self._queryset_class(qs_path)
+            return qs_class.as_manager()
+        else:
+            return self.__class__(*args, **kwargs)
+
     def check(self, **kwargs):
         return []
 
