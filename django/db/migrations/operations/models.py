@@ -287,29 +287,24 @@ class RenameModel(ModelOperation):
         # reload_model() calls from rendering models for performance
         # reasons. This method should be refactored to avoid relying on
         # state.apps (#27310).
-        reset_apps = 'apps' not in state.__dict__
-        apps = state.apps
-        model = apps.get_model(app_label, self.old_name)
-        model._meta.apps = apps
+        model_state = state.models[app_label, self.old_name_lower]
         # Get all of the related objects we need to repoint
         all_related_objects = (
-            f for f in model._meta.get_fields(include_hidden=True)
+            f for _, f in model_state.fields
             if f.auto_created and not f.concrete and (not f.hidden or f.many_to_many)
         )
-        if reset_apps:
-            del state.__dict__['apps']
         # Rename the model
         state.models[app_label, self.new_name_lower] = state.models[app_label, self.old_name_lower]
         state.models[app_label, self.new_name_lower].name = self.new_name
         state.remove_model(app_label, self.old_name_lower)
         # Repoint the FKs and M2Ms pointing to us
         for related_object in all_related_objects:
-            if related_object.model is not model:
+            if related_object.model is not model_state:
                 # The model being renamed does not participate in this relation
                 # directly. Rather, a superclass does.
                 continue
             # Use the new related key for self referential related objects.
-            if related_object.related_model == model:
+            if related_object.related_model == model_state:
                 related_key = (app_label, self.new_name_lower)
             else:
                 related_key = (
@@ -323,27 +318,27 @@ class RenameModel(ModelOperation):
                     field.remote_field.model = "%s.%s" % (app_label, self.new_name)
                 new_fields.append((name, field))
             state.models[related_key].fields = new_fields
-        # Repoint M2Ms with through pointing to us
-        related_models = {
-            f.remote_field.model for f in model._meta.fields
-            if getattr(f.remote_field, 'model', None)
-        }
-        model_name = '%s.%s' % (app_label, self.old_name)
-        for related_model in related_models:
-            if related_model == model:
-                related_key = (app_label, self.new_name_lower)
-            else:
-                related_key = (related_model._meta.app_label, related_model._meta.model_name)
-            new_fields = []
-            changed = False
-            for name, field in state.models[related_key].fields:
-                if field.is_relation and field.many_to_many and field.remote_field.through == model_name:
-                    field = field.clone()
-                    field.remote_field.through = '%s.%s' % (app_label, self.new_name)
-                    changed = True
-                new_fields.append((name, field))
-            if changed:
-                state.models[related_key].fields = new_fields
+        # # Repoint M2Ms with through pointing to us
+        # related_models = {
+        #     f.remote_field.model for _, f in model_state.fields
+        #     if getattr(f.remote_field, 'model', None)
+        # }
+        # model_name = '%s.%s' % (app_label, self.old_name)
+        # for related_model in related_models:
+        #     if related_model == model_state:
+        #         related_key = (app_label, self.new_name_lower)
+        #     else:
+        #         related_key = (related_model._meta.app_label, related_model._meta.model_name)
+        #     new_fields = []
+        #     changed = False
+        #     for name, field in state.models[related_key].fields:
+        #         if field.is_relation and field.many_to_many and field.remote_field.through == model_name:
+        #             field = field.clone()
+        #             field.remote_field.through = '%s.%s' % (app_label, self.new_name)
+        #             changed = True
+        #         new_fields.append((name, field))
+        #     if changed:
+        #         state.models[related_key].fields = new_fields
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         new_model = to_state.apps.get_model(app_label, self.new_name)
