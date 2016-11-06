@@ -175,6 +175,8 @@ class RunPython(Operation):
         pass
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        if from_state.delayed and 'apps' in from_state.__dict__:
+            del from_state.__dict__['apps']
         if router.allow_migrate(schema_editor.connection.alias, app_label, **self.hints):
             # We now execute the Python code in a context that contains a 'models'
             # object, representing the versioned models as an app registry.

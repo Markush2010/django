@@ -188,8 +188,8 @@ class RenameModel(Operation):
                     field.remote_field.model = "%s.%s" % (app_label, self.new_name)
                 new_fields.append((name, field))
             state.models[related_key].fields = new_fields
-            state.reload_model(*related_key)
-        state.reload_model(app_label, self.new_name_lower)
+            state.reload_model(*related_key, delay=True)
+        state.reload_model(app_label, self.new_name_lower, delay=True)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         new_model = to_state.apps.get_model(app_label, self.new_name)
@@ -287,7 +287,7 @@ class AlterModelTable(Operation):
 
     def state_forwards(self, app_label, state):
         state.models[app_label, self.name_lower].options["db_table"] = self.table
-        state.reload_model(app_label, self.name_lower)
+        state.reload_model(app_label, self.name_lower, delay=True)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         new_model = to_state.apps.get_model(app_label, self.name)
@@ -347,7 +347,7 @@ class AlterUniqueTogether(Operation):
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
         model_state.options[self.option_name] = self.unique_together
-        state.reload_model(app_label, self.name_lower)
+        state.reload_model(app_label, self.name_lower, delay=True)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         new_model = to_state.apps.get_model(app_label, self.name)
@@ -408,7 +408,7 @@ class AlterIndexTogether(Operation):
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
         model_state.options[self.option_name] = self.index_together
-        state.reload_model(app_label, self.name_lower)
+        state.reload_model(app_label, self.name_lower, delay=True)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         new_model = to_state.apps.get_model(app_label, self.name)
@@ -466,7 +466,7 @@ class AlterOrderWithRespectTo(Operation):
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
         model_state.options['order_with_respect_to'] = self.order_with_respect_to
-        state.reload_model(app_label, self.name_lower)
+        state.reload_model(app_label, self.name_lower, delay=True)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         to_model = to_state.apps.get_model(app_label, self.name)
@@ -550,7 +550,7 @@ class AlterModelOptions(Operation):
         for key in self.ALTER_OPTION_KEYS:
             if key not in self.options and key in model_state.options:
                 del model_state.options[key]
-        state.reload_model(app_label, self.name_lower)
+        state.reload_model(app_label, self.name_lower, delay=True)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         pass
@@ -590,7 +590,7 @@ class AlterModelManagers(Operation):
     def state_forwards(self, app_label, state):
         model_state = state.models[app_label, self.name_lower]
         model_state.managers = list(self.managers)
-        state.reload_model(app_label, self.name_lower)
+        state.reload_model(app_label, self.name_lower, delay=True)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         pass

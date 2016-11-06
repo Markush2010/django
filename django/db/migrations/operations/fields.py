@@ -48,7 +48,8 @@ class AddField(Operation):
         else:
             field = self.field
         state.models[app_label, self.model_name_lower].fields.append((self.name, field))
-        state.reload_model(app_label, self.model_name_lower)
+        delay = not field.is_relation  # Delay rendering of relationships if it's not a relational field
+        state.reload_model(app_label, self.model_name_lower, delay=delay)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         to_model = to_state.apps.get_model(app_label, self.model_name)
@@ -109,11 +110,15 @@ class RemoveField(Operation):
 
     def state_forwards(self, app_label, state):
         new_fields = []
+        old_field = None
         for name, instance in state.models[app_label, self.model_name_lower].fields:
             if name != self.name:
                 new_fields.append((name, instance))
+            else:
+                old_field = instance
         state.models[app_label, self.model_name_lower].fields = new_fields
-        state.reload_model(app_label, self.model_name_lower)
+        delay = not old_field.is_relation  # Delay rendering of relationships if it's not a relational field
+        state.reload_model(app_label, self.model_name_lower, delay=delay)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         from_model = from_state.apps.get_model(app_label, self.model_name)
@@ -180,7 +185,9 @@ class AlterField(Operation):
             for n, f in
             state.models[app_label, self.model_name_lower].fields
         ]
-        state.reload_model(app_label, self.model_name_lower)
+        # TODO: investigate if we need to reload for old relational fields or if it's sufficient if the new field is
+        delay = not field.is_relation  # Delay rendering of relationships if it's not a relational field
+        state.reload_model(app_label, self.model_name_lower, delay=delay)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         to_model = to_state.apps.get_model(app_label, self.model_name)
@@ -263,7 +270,11 @@ class RenameField(Operation):
                     [self.new_name if n == self.old_name else n for n in together]
                     for together in options[option]
                 ]
-        state.reload_model(app_label, self.model_name_lower)
+        for n, f in state.models[app_label, self.model_name_lower].fields:
+            if n == self.new_name:
+                field = f
+        delay = not field.is_relation  # Delay rendering of relationships if it's not a relational field
+        state.reload_model(app_label, self.model_name_lower, delay=delay)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         to_model = to_state.apps.get_model(app_label, self.model_name)
