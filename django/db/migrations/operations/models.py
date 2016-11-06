@@ -167,6 +167,7 @@ class RenameModel(Operation):
         state.models[app_label, self.new_name_lower] = state.models[app_label, self.old_name_lower]
         state.models[app_label, self.new_name_lower].name = self.new_name
         state.remove_model(app_label, self.old_name_lower)
+        to_reload = []
         # Repoint the FKs and M2Ms pointing to us
         for related_object in all_related_objects:
             if related_object.model is not model:
@@ -188,8 +189,9 @@ class RenameModel(Operation):
                     field.remote_field.model = "%s.%s" % (app_label, self.new_name)
                 new_fields.append((name, field))
             state.models[related_key].fields = new_fields
-            state.reload_model(*related_key, delay=True)
-        state.reload_model(app_label, self.new_name_lower, delay=True)
+            to_reload.append(related_key)
+        to_reload.append((app_label, self.new_name_lower))
+        state.reload_multiple(to_reload, delay=True)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         new_model = to_state.apps.get_model(app_label, self.new_name)
