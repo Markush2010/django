@@ -305,10 +305,13 @@ class RenameModel(ModelOperation):
         state.models[app_label, self.new_name_lower] = renamed_model
         # Repoint all fields pointing to the old model to the new one.
         old_model_tuple = app_label, self.old_name_lower
+        old_remote_model = '%s.%s' % (app_label, self.old_name_lower)
         new_remote_model = '%s.%s' % (app_label, self.new_name)
         to_reload = []
         for (model_app_label, model_name), model_state in state.models.items():
+            model_state.debug()
             model_changed = False
+            new_model_state = model_state
             for index, (name, field) in enumerate(model_state.fields):
                 changed_field = None
                 remote_field = field.remote_field
@@ -329,9 +332,24 @@ class RenameModel(ModelOperation):
                                 changed_field = field.clone()
                             changed_field.remote_field.through = new_remote_model
                 if changed_field:
-                    model_state.fields[index] = name, changed_field
+                    new_model_state = model_state.clone()
+                    new_model_state.fields[index] = name, changed_field
                     model_changed = True
+            if old_remote_model in model_state.bases:
+                new_bases = []
+                for base in model_state.bases:
+                    new_bases.append(
+                        new_remote_model.lower()
+                        if old_remote_model == base
+                        else base
+                    )
+                if not model_changed:
+                    new_model_state = model_state.clone()
+                new_model_state.bases = tuple(new_bases)
+                model_changed = True
             if model_changed:
+                new_model_state.debug()
+                state.models[model_app_label, model_name] = new_model_state
                 to_reload.append((model_app_label, model_name))
         # Reload models related to old model before removing the old model.
         state.reload_models(to_reload, delay=True)
@@ -360,9 +378,12 @@ class RenameModel(ModelOperation):
                         related_object.related_model._meta.app_label,
                         related_object.related_model._meta.model_name,
                     )
+                import ipdb; ipdb.set_trace()
                 to_field = to_state.apps.get_model(
                     *related_key
                 )._meta.get_field(related_object.field.name)
+                from_state.debug()
+                to_state.debug()
                 schema_editor.alter_field(
                     model,
                     related_object.field,
@@ -718,6 +739,40 @@ class AlterModelOptions(ModelOptionOperation):
 
     def describe(self):
         return "Change Meta options on %s" % (self.name, )
+
+
+class AlterModelBases(ModelOptionOperation):
+    """
+    Alters the model's managers
+    """
+
+    serialization_expand_args = ['bases']
+
+    def __init__(self, name, bases):
+        self.bases = bases
+        super(AlterModelBases, self).__init__(name)
+
+    def deconstruct(self):
+        return (
+            self.__class__.__name__,
+            [self.name, self.bases],
+            {}
+        )
+
+    def state_forwards(self, app_label, state):
+        import ipdb; ipdb.set_trace()
+        model_state = state.models[app_label, self.name_lower]
+        model_state.bases = tuple(self.bases)
+        state.reload_model(app_label, self.name_lower)
+
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        pass
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        pass
+
+    def describe(self):
+        return "Change bases for %s" % (self.name, )
 
 
 class AlterModelManagers(ModelOptionOperation):

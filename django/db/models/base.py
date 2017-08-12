@@ -206,6 +206,7 @@ class ModelBase(type):
                 if isinstance(field, OneToOneField):
                     related = resolve_relation(new_class, field.remote_field.model)
                     parent_links[make_model_tuple(related)] = field
+        print(parent_links)
 
         # Track fields inherited from base models.
         inherited_attributes = set()
@@ -237,6 +238,7 @@ class ModelBase(type):
                 # Concrete classes...
                 base = base._meta.concrete_model
                 base_key = make_model_tuple(base)
+                print(base_key)
                 if base_key in parent_links:
                     field = parent_links[base_key]
                 elif not is_proxy:

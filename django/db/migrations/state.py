@@ -21,6 +21,7 @@ from django.utils.module_loading import import_string
 from django.utils.version import get_docs_version
 
 from .exceptions import InvalidBasesError
+from .serializer import ModelFieldSerializer
 
 
 def _get_app_label_and_model_name(model, app_label=''):
@@ -92,11 +93,23 @@ class ProjectState(object):
     app level so that cross-app FKs/etc. resolve properly.
     """
 
+    _iteration_counter = -1
+
     def __init__(self, models=None, real_apps=None):
         self.models = models or {}
         # Apps to include from main registry, usually unmigrated ones
         self.real_apps = real_apps or []
         self.is_delayed = False
+
+        ProjectState._iteration_counter += 1
+        self._iteration_counter = ProjectState._iteration_counter
+
+        print(repr(self))
+
+    def __repr__(self):
+        return "<%s.%s at 0x%x (PS=%d)>" % (
+            self.__class__.__module__, self.__class__.__name__, id(self), self._iteration_counter,
+        )
 
     def add_model(self, model_state):
         app_label, model_name = model_state.app_label, model_state.name_lower
@@ -200,10 +213,16 @@ class ProjectState(object):
 
     def clone(self):
         "Returns an exact copy of this ProjectState"
+        # new_state = ProjectState(
+        #     models={k: v.clone() for k, v in self.models.items()},
+        #     real_apps=self.real_apps,
+        # )
+        # new_state.models = {k: v.clone() for k, v in self.models.items()}
         new_state = ProjectState(
-            models={k: v.clone() for k, v in self.models.items()},
             real_apps=self.real_apps,
         )
+        new_state.models = {k: v.clone() for k, v in self.models.items()}
+
         if 'apps' in self.__dict__:
             new_state.apps = self.apps.clone()
         new_state.is_delayed = self.is_delayed
@@ -240,6 +259,15 @@ class ProjectState(object):
 
     def __ne__(self, other):
         return not (self == other)
+
+    def _debug(self):
+        yield "ProjectState %d" % self._iteration_counter
+        for model_tuple in sorted(self.models):
+            yield from self.models[model_tuple]._debug(indent=4)
+
+    def debug(self):
+        for line in self._debug():
+            print(line)
 
 
 class AppConfigStub(AppConfig):
@@ -374,6 +402,7 @@ class ModelState(object):
     to mutate the Field instances inside there themselves - you must instead
     assign new ones, as these are not detached during a clone.
     """
+    _iteration_counter = -1
 
     def __init__(self, app_label, name, fields, options=None, bases=None, managers=None):
         self.app_label = app_label
@@ -410,6 +439,12 @@ class ModelState(object):
                     "Indexes passed to ModelState require a name attribute. "
                     "%r doesn't have one." % index
                 )
+
+        ModelState._iteration_counter += 1
+        self._iteration_counter = ModelState._iteration_counter
+        self._project_state_iteration_counter = ProjectState._iteration_counter
+
+        print(repr(self))
 
     @cached_property
     def name_lower(self):
@@ -639,7 +674,10 @@ class ModelState(object):
         raise ValueError("No index named %s on model %s" % (name, self.name))
 
     def __repr__(self):
-        return "<%s: '%s.%s'>" % (self.__class__.__name__, self.app_label, self.name)
+        return "<%s: '%s.%s' (PS=%d, MS=%d)>" % (
+            self.__class__.__name__, self.app_label, self.name,
+            self._project_state_iteration_counter, self._iteration_counter,
+        )
 
     def __eq__(self, other):
         return (
@@ -655,3 +693,22 @@ class ModelState(object):
 
     def __ne__(self, other):
         return not (self == other)
+
+    def _debug(self, indent=0):
+        indent = ' ' * indent
+        yield '%s%s.%s(%s) (ProjectState=%s, ModelState=%d)' % (
+            indent, self.app_label, self.name, self.bases, self._project_state_iteration_counter, self._iteration_counter,
+        )
+        yield '%s    fields:' % indent
+        for fname, field in self.fields:
+            yield '%s        %s: %r' % (indent, fname, ModelFieldSerializer(field).serialize()[0])
+        yield '%s    managers:' % indent
+        for mname, manager in self.managers:
+            yield '%s        %s: %r' % (indent, mname, manager)
+        yield '%s    options:' % indent
+        for oname, option in self.options.items():
+            yield '%s        %s: %s' % (indent, oname, option)
+
+    def debug(self):
+        for line in self._debug():
+            print(line)
