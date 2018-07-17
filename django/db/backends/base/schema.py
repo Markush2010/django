@@ -918,7 +918,8 @@ class BaseDatabaseSchemaEditor:
         return ''
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
-                          db_tablespace=None, col_suffixes=(), sql=None, opclasses=()):
+                          db_tablespace=None, col_suffixes=(), sql=None, opclasses=(),
+                          concurrently=False):
         """
         Return the SQL statement to create the index for one or several fields.
         `sql` can be specified if the syntax differs from the standard (GIS
@@ -942,6 +943,7 @@ class BaseDatabaseSchemaEditor:
             using=using,
             columns=self._index_columns(table, columns, col_suffixes, opclasses),
             extra=tablespace_sql,
+            concurrently=' CONCURRENTLY' if concurrently else '',
         )
 
     def _index_columns(self, table, columns, col_suffixes, opclasses):

@@ -12,7 +12,7 @@ class Index:
     # cross-database compatibility with Oracle)
     max_name_length = 30
 
-    def __init__(self, *, fields=(), name=None, db_tablespace=None, opclasses=()):
+    def __init__(self, *, fields=(), name=None, db_tablespace=None, opclasses=(), concurrently=False):
         if opclasses and not name:
             raise ValueError('An index must be named to use opclasses.')
         if not isinstance(fields, (list, tuple)):
@@ -38,6 +38,7 @@ class Index:
                 raise ValueError(errors)
         self.db_tablespace = db_tablespace
         self.opclasses = opclasses
+        self.concurrently = concurrently
 
     def check_name(self):
         errors = []
@@ -56,7 +57,7 @@ class Index:
         col_suffixes = [order[1] for order in self.fields_orders]
         return schema_editor._create_index_sql(
             model, fields, name=self.name, using=using, db_tablespace=self.db_tablespace,
-            col_suffixes=col_suffixes, opclasses=self.opclasses,
+            col_suffixes=col_suffixes, opclasses=self.opclasses, concurrently=self.concurrently,
         )
 
     def remove_sql(self, model, schema_editor):
@@ -74,6 +75,8 @@ class Index:
             kwargs['db_tablespace'] = self.db_tablespace
         if self.opclasses:
             kwargs['opclasses'] = self.opclasses
+        if self.concurrently:
+            kwargs['concurrently'] = self.concurrently
         return (path, (), kwargs)
 
     def clone(self):
