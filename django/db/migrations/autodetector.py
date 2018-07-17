@@ -264,6 +264,7 @@ class MigrationAutodetector:
                 for operation in list(self.generated_operations[app_label]):
                     deps_satisfied = True
                     operation_dependencies = set()
+                    standalone_operation = False
                     for dep in operation._auto_deps:
                         is_swappable_dep = dep[0] == '__setting__'
                         if is_swappable_dep:
@@ -274,6 +275,11 @@ class MigrationAutodetector:
                             resolved_app_label, resolved_object_name = getattr(settings, dep[1]).split('.')
                             original_dep = dep
                             dep = (resolved_app_label, resolved_object_name.lower(), dep[2], dep[3])
+                        if dep[0] == '__standalone__':
+                            if len(chopped) > 0:
+                                deps_satisfied = False
+                            standalone_operation = True
+                            break
                         if dep[0] != app_label and dep[0] != "__setting__":
                             # External app dependency. See if it's not yet
                             # satisfied.
@@ -305,16 +311,20 @@ class MigrationAutodetector:
                         chopped.append(operation)
                         dependencies.update(operation_dependencies)
                         del self.generated_operations[app_label][0]
+                        if standalone_operation:
+                            break
                     else:
                         break
                 # Make a migration! Well, only if there's stuff to put in it
                 if dependencies or chopped:
-                    if not self.generated_operations[app_label] or chop_mode:
+                    if not self.generated_operations[app_label] or chop_mode or standalone_operation:
                         subclass = type("Migration", (Migration,), {"operations": [], "dependencies": []})
                         instance = subclass("auto_%i" % (len(self.migrations.get(app_label, [])) + 1), app_label)
                         instance.dependencies = list(dependencies)
                         instance.operations = chopped
                         instance.initial = app_label not in self.existing_apps
+                        if standalone_operation:
+                            instance.atomic = False
                         self.migrations.setdefault(app_label, []).append(instance)
                         chop_mode = False
                     else:
@@ -598,13 +608,17 @@ class MigrationAutodetector:
             ]
             related_dependencies.append((app_label, model_name, None, True))
             for index in indexes:
+                index_related_dependencies = related_dependencies
+                if index.concurrently:
+                    index_related_dependencies = related_dependencies[:]
+                    index_related_dependencies.append(('__standalone__', model_name, None, True))
                 self.add_operation(
                     app_label,
                     operations.AddIndex(
                         model_name=model_name,
                         index=index,
                     ),
-                    dependencies=related_dependencies,
+                    dependencies=index_related_dependencies,
                 )
             for constraint in constraints:
                 self.add_operation(
@@ -992,12 +1006,17 @@ class MigrationAutodetector:
     def generate_added_indexes(self):
         for (app_label, model_name), alt_indexes in self.altered_indexes.items():
             for index in alt_indexes['added_indexes']:
+                if index.concurrently:
+                    dependencies = [('__standalone__', model_name, None, True)]
+                else:
+                    dependencies = None
                 self.add_operation(
                     app_label,
                     operations.AddIndex(
                         model_name=model_name,
                         index=index,
-                    )
+                    ),
+                    dependencies=dependencies,
                 )
 
     def generate_removed_indexes(self):

@@ -141,6 +141,7 @@ class MigrationWriter:
         items = {
             "replaces_str": "",
             "initial_str": "",
+            "atomic_str": "",
         }
 
         imports = set()
@@ -202,6 +203,9 @@ class MigrationWriter:
 
         if self.migration.initial:
             items['initial_str'] = "\n    initial = True\n"
+
+        if not self.migration.atomic:
+            items['atomic_str'] = "\n    atomic = False\n"
 
         return MIGRATION_TEMPLATE % items
 
@@ -285,7 +289,7 @@ MIGRATION_TEMPLATE = """\
 %(imports)s
 
 class Migration(migrations.Migration):
-%(replaces_str)s%(initial_str)s
+%(replaces_str)s%(atomic_str)s%(initial_str)s
     dependencies = [
 %(dependencies)s\
     ]
