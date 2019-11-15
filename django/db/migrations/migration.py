@@ -85,6 +85,7 @@ class Migration:
 
         for operation in self.operations:
             operation.state_forwards(self.app_label, new_state)
+            self._ensure_consistent_state(new_state)
         return new_state
 
     def apply(self, project_state, schema_editor, collect_sql=False):
@@ -112,6 +113,7 @@ class Migration:
             # Save the state before the operation has run
             old_state = project_state.clone()
             operation.state_forwards(self.app_label, project_state)
+            self._ensure_consistent_state(project_state)
             # Run the operation
             atomic_operation = operation.atomic or (self.atomic and operation.atomic is not False)
             if not schema_editor.atomic_migration and atomic_operation:
@@ -174,6 +176,14 @@ class Migration:
                 # Normal behaviour
                 operation.database_backwards(self.app_label, schema_editor, from_state, to_state)
         return project_state
+
+    def _ensure_consistent_state(self, state):
+        if "apps" in state.__dict__:
+            if not state.apps._is_consistent:
+                if state.is_delayed:
+                    state.clear_delayed_apps_cache()
+                else:
+                    raise ValueError("Inconsistent migration state!")
 
 
 class SwappableTuple(tuple):

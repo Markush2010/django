@@ -928,6 +928,71 @@ class StateTests(SimpleTestCase):
         choices_field = Author._meta.get_field('choice')
         self.assertEqual(list(choices_field.choices), choices)
 
+    def test_reload_related_models_on_non_relational_fields(self):
+        """
+        #30966 - Even when fields on a model change that are not involved in
+        a relation, the model gets reloaded. Ensure that other models pointing
+        to or from it are reloaded accordingly.
+
+        User  <--  Domain  <-- RRset
+          ^
+          +--  Token
+        """
+        project_state = ProjectState()
+        # Render project state to simulate initial migration state
+        project_state.apps
+        assert project_state.apps._is_consistent is True
+        project_state.add_model(ModelState(
+            "migrations",
+            "User",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("email", models.EmailField(max_length=191, unique=True)),
+            ]
+        ))
+        assert project_state.apps._is_consistent is True
+        project_state.add_model(ModelState(
+            "migrations",
+            "Domain",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("owner", models.ForeignKey("migrations.User", models.SET_NULL)),
+            ]
+        ))
+        assert project_state.apps._is_consistent is True
+        project_state.add_model(ModelState(
+            "migrations",
+            "RRset",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("subname", models.CharField(blank=True, max_length=178)),
+                ("domain", models.ForeignKey("migrations.Domain", models.SET_NULL)),
+            ]
+        ))
+        assert project_state.apps._is_consistent is True
+        project_state.add_model(ModelState(
+            "migrations",
+            "Token",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("user", models.ForeignKey("migrations.User", models.SET_NULL)),
+            ]
+        ))
+        assert project_state.apps._is_consistent is True
+        AlterField(
+            model_name="RRset",
+            name="subname",
+            field=models.CharField(blank=False, max_length=178),
+        ).state_forwards("migrations", project_state)
+        assert project_state.apps._is_consistent is False
+        project_state.clear_delayed_apps_cache()
+
+        all_models = project_state.apps.all_models["migrations"]
+        assert (
+            all_models['token']._meta.get_field('user').related_model
+            is all_models['user']
+        ), "Models are not identical"
+
 
 class ModelStateTests(SimpleTestCase):
     def test_custom_model_base(self):

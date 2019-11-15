@@ -345,6 +345,29 @@ class StateApps(Apps):
         except KeyError:
             pass
 
+    @property
+    def _is_consistent(self):
+        for model in self.get_models(include_auto_created=True):
+            for f in model._meta.get_fields(include_parents=True, include_hidden=True):
+                if f.is_relation:
+                    if f.related_model is None:
+                        raise ValueError(
+                            "Missing related model for field %s on model %s" % (f.name, model._meta.label)
+                        )
+                    elif isinstance(f.related_model, str):
+                        raise ValueError("???? %s ????" % f.related_model)
+                    else:
+                        rel_mod = f.related_model
+                        rel_mod_id = id(rel_mod)
+                        rel_app_label, rel_model_name = rel_mod._meta.app_label, rel_mod._meta.model_name
+                        if rel_app_label not in self.all_models:
+                            raise ValueError("No app found %s for field %s on model %s" % (rel_app_label, f.name, model._meta.label))
+                        if rel_model_name not in self.all_models[rel_app_label]:
+                            raise ValueError("Model %s not found in app %s for field %s on model %s" % (rel_model_name, rel_app_label, f.name, model._meta.label))
+                        if id(self.all_models[rel_app_label][rel_model_name]) != rel_mod_id:
+                            return False
+        return True
+
 
 class ModelState:
     """
