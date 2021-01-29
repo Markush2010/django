@@ -244,6 +244,10 @@ PostgreSQL 10 and higher.
 Miscellaneous
 -------------
 
+* Starting with 4.0, new projects are generated with a :setting:`STATIC_URL`
+  that is a relative path. This allows for the ``SCRIPT_NAME`` to be prepended
+  as necessary.
+
 * ...
 
 .. _deprecated-features-4.0:
